@@ -97,6 +97,8 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
                   className={`p-0.5 rounded-md hover:bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity ${
                     activeTabId === tab.id ? 'opacity-100' : ''
                   }`}
+                  title="Close Tab"
+                  aria-label="Close Tab"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -111,6 +113,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
               onClick={() => setIsMaximized(!isMaximized)}
               className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
               title={isMaximized ? 'Restore Down' : 'Maximize Panel'}
+              aria-label={isMaximized ? 'Restore Down' : 'Maximize Panel'}
             >
               {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
             </button>
@@ -119,6 +122,7 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
             title={isMinimized ? 'Expand Panel' : 'Minimize Panel'}
+            aria-label={isMinimized ? 'Expand Panel' : 'Minimize Panel'}
           >
             {isMinimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
@@ -126,7 +130,8 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
           <button
             onClick={onClose}
             className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Close All"
+            title="Close All Panel Tabs"
+            aria-label="Close All Panel Tabs"
           >
             <X className="w-4 h-4" />
           </button>

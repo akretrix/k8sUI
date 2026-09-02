@@ -8,6 +8,7 @@ import {
 import { api, isTauri } from '../../api/tauriClient';
 import { PodSummary } from '../../types/cluster';
 import { save } from '@tauri-apps/plugin-dialog';
+import { stripAnsi, renderAnsiLine } from '../../utils/ansiRenderer';
 
 interface LogsViewProps {
   isActive: boolean;
@@ -18,6 +19,33 @@ interface LogsViewProps {
     namespace: string;
   } | null;
 }
+
+interface LogLineItemProps {
+  log: string;
+  searchQuery: string;
+  caseSensitive: boolean;
+  isRegex: boolean;
+  wrapLines: boolean;
+}
+
+/**
+ * High-performance memoized line renderer.
+ * Prevents re-parsing ANSI escape sequences for lines that have not changed.
+ */
+const LogLineItem = React.memo<LogLineItemProps>(
+  ({ log, searchQuery, caseSensitive, isRegex, wrapLines }) => {
+    return (
+      <div
+        className={`hover:bg-white/5 ${
+          wrapLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'
+        }`}
+      >
+        {renderAnsiLine(log, searchQuery, caseSensitive, isRegex)}
+      </div>
+    );
+  }
+);
+LogLineItem.displayName = 'LogLineItem';
 
 export const LogsView: React.FC<LogsViewProps> = ({
   isActive,
@@ -34,7 +62,9 @@ export const LogsView: React.FC<LogsViewProps> = ({
   const [timestamps, setTimestamps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wrapLines, setWrapLines] = useState(true);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const isFetchingRef = useRef(false);
 
   // Search & Filtering State
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,12 +89,13 @@ export const LogsView: React.FC<LogsViewProps> = ({
         const matched = allPods.filter((p) =>
           p.name.startsWith(resourceName) || (p.name.includes(resourceName) && p.namespace === namespace)
         );
-        setMatchingPods(matched);
-        if (matched.length > 0) {
-          setSelectedPodName('all');
-        } else {
-          setSelectedPodName(resourceName);
-        }
+        setMatchingPods((prev) => {
+          if (prev.length === matched.length && prev.every((p, idx) => p.name === matched[idx]?.name)) {
+            return prev;
+          }
+          return matched;
+        });
+        setSelectedPodName((prev) => (prev === 'all' || !matched.some((m) => m.name === prev) ? 'all' : prev));
       }).catch(() => {
         if (!cancelled) setMatchingPods([]);
       });
@@ -90,11 +121,14 @@ export const LogsView: React.FC<LogsViewProps> = ({
       .listContainers(namespace, targetPod)
       .then((names) => {
         if (cancelled) return;
-        setContainers(names);
-        if (names.length > 0) {
-          if (container === 'all' || !names.includes(container)) {
-            setContainer(names[0]);
+        setContainers((prev) => {
+          if (prev.length === names.length && prev.every((n, i) => n === names[i])) {
+            return prev;
           }
+          return names;
+        });
+        if (names.length > 0) {
+          setContainer((prev) => (prev !== 'all' && names.includes(prev) ? prev : names[0]));
         }
       })
       .catch(() => setContainers([]));
@@ -102,7 +136,7 @@ export const LogsView: React.FC<LogsViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isActive, namespace, selectedPodName, matchingPods, resourceName, container]);
+  }, [isActive, namespace, selectedPodName, matchingPods, resourceName]);
 
   // Reset core state when the target resource changes
   useEffect(() => {
@@ -119,18 +153,19 @@ export const LogsView: React.FC<LogsViewProps> = ({
 
   // 3. Fetch logs based on pod and container selection
   const fetchLogs = useCallback(async () => {
-    if (!resourceName) return;
+    if (!resourceName || isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       if (isWorkload && selectedPodName === 'all' && matchingPods.length > 0) {
         // Multi-pod aggregated logs
         const results = await Promise.all(
-          matchingPods.slice(0, 5).map(async (pod) => {
+          matchingPods.slice(0, 3).map(async (pod) => {
             try {
               const text = await api.getLogs(namespace, pod.name, {
                 container: container !== 'all' ? container : undefined,
                 previous,
                 timestamps,
-                tailLines: 200,
+                tailLines: 150,
               });
               return text
                 .split('\n')
@@ -142,7 +177,16 @@ export const LogsView: React.FC<LogsViewProps> = ({
           })
         );
         const merged = results.flat();
-        setLogs(merged.length ? merged : ['(no output from workload pods)']);
+        const newLogs = merged.length ? merged : ['(no output from workload pods)'];
+        setLogs((prev) => {
+          if (
+            prev.length === newLogs.length &&
+            (newLogs.length === 0 || prev[prev.length - 1] === newLogs[newLogs.length - 1])
+          ) {
+            return prev;
+          }
+          return newLogs;
+        });
         setError(null);
       } else {
         // Single pod log fetch
@@ -151,12 +195,24 @@ export const LogsView: React.FC<LogsViewProps> = ({
           container: container !== 'all' ? container : undefined,
           previous,
           timestamps,
+          tailLines: 300,
         });
-        setLogs(text.length ? text.split('\n') : ['(no output)']);
+        const newLogs = text.length ? text.split('\n') : ['(no output)'];
+        setLogs((prev) => {
+          if (
+            prev.length === newLogs.length &&
+            (newLogs.length === 0 || prev[prev.length - 1] === newLogs[newLogs.length - 1])
+          ) {
+            return prev;
+          }
+          return newLogs;
+        });
         setError(null);
       }
     } catch (e: any) {
       setError(e?.message || String(e));
+    } finally {
+      isFetchingRef.current = false;
     }
   }, [namespace, resourceName, isWorkload, selectedPodName, matchingPods, container, previous, timestamps]);
 
@@ -168,18 +224,30 @@ export const LogsView: React.FC<LogsViewProps> = ({
     }
     fetchLogs();
     if (!isFollowing) return;
-    const interval = setInterval(fetchLogs, 3000);
+    const interval = setInterval(fetchLogs, 4000);
     return () => clearInterval(interval);
   }, [isActive, resource, isFollowing, fetchLogs]);
 
+  // Instant, non-blocking auto-scroll to bottom if following
   useEffect(() => {
-    if (isFollowing && logsEndRef.current && isActive) {
-      logsEndRef.current.scrollIntoView?.({ block: 'end', behavior: 'smooth' });
+    if (isFollowing && terminalRef.current && isActive) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
     }
-  }, [logs, isFollowing, filterOnlyMatches, searchQuery, isActive]);
+  }, [logs, isFollowing, isActive]);
+
+  // Handle user scrolling: pause auto-follow when scrolled up, resume when at bottom
+  const handleScroll = useCallback(() => {
+    if (!terminalRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = terminalRef.current;
+    const atBottom = scrollHeight - scrollTop - clientHeight < 60;
+    if (atBottom !== isFollowing) {
+      setIsFollowing(atBottom);
+    }
+  }, [isFollowing]);
 
   const download = async () => {
     const defaultName = `${resourceName}${container !== 'all' ? `-${container}` : ''}.log`;
+    const cleanLogContent = logs.map((l) => stripAnsi(l)).join('\n');
     
     if (isTauri) {
       try {
@@ -188,13 +256,13 @@ export const LogsView: React.FC<LogsViewProps> = ({
           filters: [{ name: 'Log File', extensions: ['log', 'txt'] }]
         });
         if (filePath) {
-          await api.saveFile(filePath, logs.join('\n'));
+          await api.saveFile(filePath, cleanLogContent);
         }
       } catch (err) {
         console.error('Failed to save file in Tauri:', err);
       }
     } else {
-      const blob = new Blob([logs.join('\n')], { type: 'text/plain' });
+      const blob = new Blob([cleanLogContent], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -210,10 +278,10 @@ export const LogsView: React.FC<LogsViewProps> = ({
 
     if (logLevel !== 'all') {
       result = result.filter((line) => {
-        const lower = line.toLowerCase();
-        if (logLevel === 'error') return lower.includes('error') || lower.includes('err') || lower.includes('fatal') || lower.includes('panic');
-        if (logLevel === 'warn') return lower.includes('warn') || lower.includes('warning');
-        if (logLevel === 'info') return lower.includes('info') || lower.includes('notice');
+        const clean = stripAnsi(line).toLowerCase();
+        if (logLevel === 'error') return clean.includes('error') || clean.includes('err') || clean.includes('fatal') || clean.includes('panic');
+        if (logLevel === 'warn') return clean.includes('warn') || clean.includes('warning');
+        if (logLevel === 'info') return clean.includes('info') || clean.includes('notice');
         return true;
       });
     }
@@ -226,9 +294,10 @@ export const LogsView: React.FC<LogsViewProps> = ({
 
         if (filterOnlyMatches) {
           result = result.filter((line) => {
-            if (regex) return regex.test(line);
-            if (caseSensitive) return line.includes(searchQuery);
-            return line.toLowerCase().includes(searchQuery.toLowerCase());
+            const clean = stripAnsi(line);
+            if (regex) return regex.test(clean);
+            if (caseSensitive) return clean.includes(searchQuery);
+            return clean.toLowerCase().includes(searchQuery.toLowerCase());
           });
         }
       } catch {
@@ -248,7 +317,8 @@ export const LogsView: React.FC<LogsViewProps> = ({
 
       let count = 0;
       for (const line of filteredLogs) {
-        const matches = line.match(regex);
+        const clean = stripAnsi(line);
+        const matches = clean.match(regex);
         if (matches) count += matches.length;
       }
       return count;
@@ -256,34 +326,6 @@ export const LogsView: React.FC<LogsViewProps> = ({
       return 0;
     }
   }, [filteredLogs, searchQuery, isRegex, caseSensitive]);
-
-  const renderLogLine = (line: string) => {
-    if (!searchQuery.trim()) return line;
-    try {
-      const regex = isRegex
-        ? new RegExp(`(${searchQuery})`, caseSensitive ? 'g' : 'gi')
-        : new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, caseSensitive ? 'g' : 'gi');
-
-      const parts = line.split(regex);
-      return parts.map((part, i) => {
-        const isMatch = isRegex
-          ? new RegExp(`^${searchQuery}$`, caseSensitive ? '' : 'i').test(part)
-          : caseSensitive
-          ? part === searchQuery
-          : part.toLowerCase() === searchQuery.toLowerCase();
-
-        return isMatch ? (
-          <mark key={i} className="bg-amber-400/30 text-amber-200 px-0.5 rounded font-bold border-b border-amber-400">
-            {part}
-          </mark>
-        ) : (
-          part
-        );
-      });
-    } catch {
-      return line;
-    }
-  };
 
   if (!isActive || !resource) return null;
 
@@ -309,6 +351,8 @@ export const LogsView: React.FC<LogsViewProps> = ({
               value={selectedPodName}
               onChange={(e) => setSelectedPodName(e.target.value)}
               className="bg-surface-elevated border border-border text-xs text-gray-200 rounded-md px-2 py-1 outline-none cursor-pointer"
+              title="Filter logs by pod"
+              aria-label="Filter logs by pod"
             >
               <option value="all">All Pods ({matchingPods.length})</option>
               {matchingPods.map((p) => (
@@ -322,6 +366,8 @@ export const LogsView: React.FC<LogsViewProps> = ({
               value={container}
               onChange={(e) => setContainer(e.target.value)}
               className="bg-surface-elevated border border-border text-xs text-gray-200 rounded-md px-2 py-1 outline-none cursor-pointer"
+              title="Filter logs by container"
+              aria-label="Filter logs by container"
             >
               {containers.map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -332,23 +378,45 @@ export const LogsView: React.FC<LogsViewProps> = ({
           <button
             onClick={() => setIsFollowing(!isFollowing)}
             className={`px-2 py-1 rounded text-xs border ${isFollowing ? 'bg-emerald-900 text-emerald-200' : 'bg-surface-elevated text-gray-400'}`}
+            title={isFollowing ? 'Pause Live Logs' : 'Resume Live Streaming'}
+            aria-label={isFollowing ? 'Pause Live Logs' : 'Resume Live Streaming'}
           >
             {isFollowing ? 'Live' : 'Paused'}
           </button>
           
-          <button onClick={() => setTimestamps(!timestamps)} className="p-1.5 border border-border rounded text-gray-400">
+          <button
+            onClick={() => setTimestamps(!timestamps)}
+            className="p-1.5 border border-border rounded text-gray-400 hover:text-gray-200 hover:bg-surface-hover transition-colors"
+            title={timestamps ? 'Hide Timestamps' : 'Show Timestamps'}
+            aria-label={timestamps ? 'Hide Timestamps' : 'Show Timestamps'}
+          >
             <Clock className="w-3.5 h-3.5" />
           </button>
           
-          <button onClick={() => setWrapLines(!wrapLines)} className="p-1.5 border border-border rounded text-gray-400">
+          <button
+            onClick={() => setWrapLines(!wrapLines)}
+            className="p-1.5 border border-border rounded text-gray-400 hover:text-gray-200 hover:bg-surface-hover transition-colors"
+            title={wrapLines ? 'Disable Line Wrap (Horizontal Scroll)' : 'Enable Line Wrap'}
+            aria-label={wrapLines ? 'Disable Line Wrap' : 'Enable Line Wrap'}
+          >
             <WrapText className="w-3.5 h-3.5" />
           </button>
           
-          <button onClick={download} className="p-1.5 border border-border rounded text-gray-400">
+          <button
+            onClick={download}
+            className="p-1.5 border border-border rounded text-gray-400 hover:text-gray-200 hover:bg-surface-hover transition-colors"
+            title="Download Logs as File"
+            aria-label="Download Logs as File"
+          >
             <Download className="w-3.5 h-3.5" />
           </button>
 
-          <button onClick={onClose} className="p-1.5 text-gray-400">
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+            title="Close Logs View"
+            aria-label="Close Logs View"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -363,24 +431,30 @@ export const LogsView: React.FC<LogsViewProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="flex-1 max-w-sm px-3 py-1 bg-[#0A0A0C] border border-border rounded-lg text-xs font-mono text-gray-100"
+            title="Search within log stream"
+            aria-label="Search within log stream"
           />
           <button
             onClick={() => setCaseSensitive(!caseSensitive)}
             className={`px-1.5 py-0.5 rounded text-[11px] font-mono border ${caseSensitive ? 'bg-indigo-900/60 border-indigo-500 text-indigo-200' : 'bg-surface-elevated border-border text-gray-400'}`}
-            title="Match Case"
+            title="Match Case (Case Sensitive)"
+            aria-label="Match Case (Case Sensitive)"
           >
             Aa
           </button>
           <button
             onClick={() => setIsRegex(!isRegex)}
             className={`px-1.5 py-0.5 rounded text-[11px] font-mono border ${isRegex ? 'bg-indigo-900/60 border-indigo-500 text-indigo-200' : 'bg-surface-elevated border-border text-gray-400'}`}
-            title="Use Regular Expression"
+            title="Use Regular Expression (Regex)"
+            aria-label="Use Regular Expression (Regex)"
           >
             .*
           </button>
           <button
             onClick={() => setFilterOnlyMatches(!filterOnlyMatches)}
             className={`px-2 py-1 rounded border ${filterOnlyMatches ? 'bg-brand-900 text-brand-200' : 'bg-surface-elevated text-gray-400'}`}
+            title={filterOnlyMatches ? 'Show All Lines (Clear Filter)' : 'Filter: Show Only Matching Lines'}
+            aria-label={filterOnlyMatches ? 'Show All Lines (Clear Filter)' : 'Filter: Show Only Matching Lines'}
           >
             Filter
           </button>
@@ -393,20 +467,25 @@ export const LogsView: React.FC<LogsViewProps> = ({
       </div>
 
       {/* Terminal Area */}
-      <div className="flex-1 p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300">
+      <div
+        ref={terminalRef}
+        onScroll={handleScroll}
+        className="flex-1 p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300"
+      >
         {error ? (
           <div className="text-rose-400 p-2 bg-rose-950/20 border border-rose-900/50 rounded">{error}</div>
         ) : (
           filteredLogs.map((log, i) => (
-            <div
-              key={i}
-              className={`hover:bg-white/5 ${wrapLines ? 'whitespace-pre-wrap break-all' : 'whitespace-pre'}`}
-            >
-              {renderLogLine(log)}
-            </div>
+            <LogLineItem
+              key={`${i}-${log.length}`}
+              log={log}
+              searchQuery={searchQuery}
+              caseSensitive={caseSensitive}
+              isRegex={isRegex}
+              wrapLines={wrapLines}
+            />
           ))
         )}
-        <div ref={logsEndRef} />
       </div>
     </div>
   );

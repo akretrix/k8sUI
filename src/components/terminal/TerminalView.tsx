@@ -198,6 +198,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             <button
               onClick={onClose}
               className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-surface-hover transition-colors"
+              title="Close Terminal Session"
+              aria-label="Close Terminal Session"
             >
               <X className="w-4 h-4" />
             </button>
