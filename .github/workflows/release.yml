@@ -40,9 +40,9 @@ jobs:
         timeout-minutes: 5
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential libayatana-appindicator3-dev
 
-      - uses: pnpm/action-setup@a3252b78c470c02df07e9d792d8704cc65c768ca # v3.0.0
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
       - name: Setup Node & Rust Toolchains
@@ -125,9 +125,9 @@ jobs:
         timeout-minutes: 5
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file libayatana-appindicator3-dev
 
-      - uses: pnpm/action-setup@a3252b78c470c02df07e9d792d8704cc65c768ca # v3.0.0
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
       - name: Setup Node.js
@@ -191,7 +191,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@a3252b78c470c02df07e9d792d8704cc65c768ca # v3.0.0
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
       - name: Setup Node & Rust for SBOM
