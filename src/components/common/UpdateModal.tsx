@@ -111,7 +111,7 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
                   <div className="text-[11px] text-blue-200/90 leading-normal">
                     <strong>macOS Gatekeeper tip:</strong> If macOS shows a warning for open-source apps, run{' '}
                     <code className="bg-black/50 px-1 py-0.5 rounded text-cyan-300 font-mono">
-                      xattr -cr /Applications/k8s-ui.app
+                      xattr -cr /Applications/k8sUI.app
                     </code>{' '}
                     in Terminal to clear the download quarantine flag.
                   </div>

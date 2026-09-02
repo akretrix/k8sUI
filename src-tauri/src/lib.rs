@@ -26,7 +26,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
     {
         let items = menu.items()?;
         if let Some(MenuItemKind::Submenu(app_submenu)) = items.first() {
-            // Insert Check for Updates right after "About k8s-ui" (index 1)
+            // Insert Check for Updates right after "About k8sUI" (index 1)
             let separator = PredefinedMenuItem::separator(handle)?;
             app_submenu.insert(&check_updates, 1)?;
             app_submenu.insert(&separator, 2)?;

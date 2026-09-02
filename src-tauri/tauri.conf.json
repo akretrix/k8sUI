@@ -1,5 +1,5 @@
 {
-  "productName": "k8s-ui",
+  "productName": "k8sUI",
   "version": "0.1.1",
   "identifier": "com.k8sui.desktop",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "K8SUI",
+        "title": "k8sUI",
         "width": 1360,
         "height": 860,
         "minWidth": 1024,
