@@ -18,15 +18,22 @@ describe('GenericResourceTable Functional Tests', () => {
       defaultOptions: {
         queries: {
           retry: false,
+          refetchInterval: false,
+          refetchOnWindowFocus: false,
+          gcTime: 0,
         },
       },
     });
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    queryClient.clear();
+  });
+
   it('renders loading spinner while fetching information', async () => {
     (api.listResources as any).mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve([]), 500))
+      () => new Promise(() => {})
     );
 
     render(
