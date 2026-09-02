@@ -1,0 +1,20 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist test fixture mock secrets and official AWS example documentation tokens"
+stopwords = [
+    "AKIAIOSFODNN7EXAMPLE",
+    "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "c29tZS1zZWNyZXQ=",
+]
+regexes = [
+    '''AKIAIOSFODNN7EXAMPLE''',
+    '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+    '''c29tZS1zZWNyZXQ=''',
+]
+paths = [
+    '''src-tauri/src/core/redact\.rs''',
+    '''src/api/tauriClient\.ts''',
+    '''\.test\.tsx?$''',
+]
