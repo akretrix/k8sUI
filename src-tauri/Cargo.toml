@@ -1,6 +1,6 @@
 [package]
 name = "k8s-ui"
-version = "0.1.0"
+version = "0.1.1"
 description = "Security-focused desktop Kubernetes administrator"
 authors = ["k8sUI Contributors"]
 license = "Apache-2.0"
