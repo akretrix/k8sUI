@@ -7,14 +7,14 @@ import { PodSummary } from '../../types/cluster';
 import { Terminal as TerminalIcon, X, AlertCircle } from 'lucide-react';
 import { api, isTauri } from '../../api/tauriClient';
 
-interface TerminalModalProps {
-  isOpen: boolean;
+interface TerminalViewProps {
+  isActive: boolean;
   onClose: () => void;
   pod: PodSummary | null;
 }
 
-export const TerminalModal: React.FC<TerminalModalProps> = ({
-  isOpen,
+export const TerminalView: React.FC<TerminalViewProps> = ({
+  isActive,
   onClose,
   pod,
 }) => {
@@ -27,7 +27,7 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
 
   // Discover containers for pod
   useEffect(() => {
-    if (!isOpen || !pod) return;
+    if (!isActive || !pod) return;
     api.listContainers(pod.namespace, pod.name)
       .then((names) => {
         setContainers(names);
@@ -36,11 +36,12 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
         }
       })
       .catch(() => setContainers([]));
-  }, [isOpen, pod]);
+  }, [isActive, pod]);
 
   useEffect(() => {
-    if (!isOpen || !terminalRef.current || !pod) return;
+    if (!isActive || !terminalRef.current || !pod) return;
     setError(null);
+    let ignore = false;
 
     // Initialize xterm.js
     const term = new Terminal({
@@ -64,19 +65,31 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
     term.loadAddon(webLinksAddon);
 
     term.open(terminalRef.current);
-    fitAddon.fit();
+    try {
+      fitAddon.fit();
+    } catch {}
     termInstanceRef.current = term;
+
+    const initialCols = term.cols || 80;
+    const initialRows = term.rows || 24;
 
     term.writeln(`\x1b[1;34mk8sUI Interactive Exec Terminal (bash / sh / ash)\x1b[0m`);
     term.writeln(`Connecting to \x1b[32m${pod.namespace}/${pod.name}\x1b[0m${container ? ` [container: ${container}]` : ''}...\r\n`);
 
     let unlistenEvent: (() => void) | undefined;
 
-    // Start real backend exec session
-    api.startTerminal(pod.namespace, pod.name, container)
+    // Start real backend exec session with explicit initial dimensions
+    api.startTerminal(pod.namespace, pod.name, container, initialCols, initialRows)
       .then(async (sessionId) => {
+        if (ignore) return;
         sessionIdRef.current = sessionId;
         term.writeln(`\x1b[32m✔ Session established (${sessionId})\x1b[0m\r\n`);
+
+        // Ensure backend PTY receives accurate dimensions once container layout settles
+        try {
+          fitAddon.fit();
+          api.resizeTerminal(sessionId, term.cols, term.rows).catch(() => {});
+        } catch {}
 
         if (isTauri) {
           try {
@@ -92,6 +105,7 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
         }
       })
       .catch((err) => {
+        if (ignore) return;
         const msg = err?.message || String(err);
         setError(msg);
         term.writeln(`\r\n\x1b[31m✖ Failed to connect exec session: ${msg}\x1b[0m\r\n`);
@@ -104,10 +118,42 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
       }
     });
 
-    const handleResize = () => fitAddon.fit();
+    const onResizeDisposable = term.onResize(({ cols, rows }) => {
+      if (sessionIdRef.current) {
+        api.resizeTerminal(sessionIdRef.current, cols, rows).catch(() => {});
+      }
+    });
+
+    const handleResize = () => {
+      try {
+        fitAddon.fit();
+        if (sessionIdRef.current) {
+          api.resizeTerminal(sessionIdRef.current, term.cols, term.rows).catch(() => {});
+        }
+      } catch {}
+    };
+
     window.addEventListener('resize', handleResize);
 
+    // Observe size changes of the parent container (panel drag resize, minimize, maximize)
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+
+    if (terminalRef.current) {
+      resizeObserver.observe(terminalRef.current);
+    }
+    
+    // Initial fit after a delay to ensure container is fully laid out
+    setTimeout(() => {
+      if (termInstanceRef.current) {
+        handleResize();
+      }
+    }, 100);
+
     return () => {
+      ignore = true;
+      resizeObserver.disconnect();
       if (sessionIdRef.current) {
         api.closeTerminal(sessionIdRef.current).catch(() => {});
         sessionIdRef.current = null;
@@ -116,19 +162,19 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
         unlistenEvent();
       }
       onDataDisposable.dispose();
+      onResizeDisposable.dispose();
       window.removeEventListener('resize', handleResize);
       term.dispose();
       termInstanceRef.current = null;
     };
-  }, [isOpen, pod, container]);
+  }, [isActive, pod, container]);
 
-  if (!isOpen || !pod) return null;
+  if (!isActive || !pod) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-100">
-      <div className="bg-surface-elevated border border-border rounded-xl shadow-2xl max-w-5xl w-full flex flex-col h-[75vh] overflow-hidden">
-        {/* Terminal Header */}
-        <div className="px-4 py-3 border-b border-border bg-surface flex items-center justify-between">
+    <div className="flex flex-col h-full w-full bg-[#090D16]">
+      {/* Terminal Header */}
+      <div className="px-4 py-2 border-b border-border bg-surface/70 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <TerminalIcon className="w-4 h-4 text-emerald-400" />
             <span className="text-xs font-mono font-bold text-gray-200">
@@ -165,8 +211,9 @@ export const TerminalModal: React.FC<TerminalModalProps> = ({
           </div>
         )}
 
-        {/* Xterm container */}
-        <div className="flex-1 p-3 bg-[#090D16] overflow-hidden" ref={terminalRef} />
+      {/* Xterm container */}
+      <div className="flex-1 p-3 bg-[#090D16] overflow-hidden min-h-0 relative">
+        <div className="absolute inset-0 p-3" ref={terminalRef} />
       </div>
     </div>
   );

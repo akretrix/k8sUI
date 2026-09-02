@@ -4,7 +4,7 @@ import { api, isTauri } from './api/tauriClient';
 import { Header } from './components/layout/Header';
 import { PodTable } from './components/pods/PodTable';
 import { CommandPalette } from './components/command-palette/CommandPalette';
-import { TerminalModal } from './components/terminal/TerminalModal';
+import { TerminalView } from './components/terminal/TerminalView';
 import { PortForwardModal } from './components/portforward/PortForwardModal';
 import { AiCopilotDrawer } from './components/ai/AiCopilotDrawer';
 import { AuditLogModal } from './components/audit/AuditLogModal';
@@ -13,7 +13,7 @@ import { Sidebar, CustomResourceType } from './components/layout/Sidebar';
 import { GenericResourceTable } from './components/common/GenericResourceTable';
 import { DescribeModal } from './components/common/DescribeModal';
 import { YamlEditorModal, EditableResourceRef } from './components/common/YamlEditorModal';
-import { LogsModal } from './components/common/LogsModal';
+import { LogsView } from './components/common/LogsView';
 import { ClusterDashboard } from './components/dashboard/ClusterDashboard';
 import { PortForwardFloatingBanner } from './components/portforward/PortForwardFloatingBanner';
 import { PendingAiProposal, PodSummary, ClusterContextSummary, ActivePortForward } from './types/cluster';
@@ -24,6 +24,7 @@ import { ConfirmationModal } from './components/common/ConfirmationModal';
 import { ScaleModal, ScaleTarget } from './components/common/ScaleModal';
 import { DesignSystemShowcase } from './components/design-system/DesignSystemShowcase';
 import { AwsSsoModal } from './components/cluster/AwsSsoModal';
+import { BottomPanel, PanelTab } from './components/layout/BottomPanel';
 import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -60,12 +61,79 @@ export const App: React.FC = () => {
   const [isDesignSystemOpen, setIsDesignSystemOpen] = useState(false);
   const [isNewTabModalOpen, setIsNewTabModalOpen] = useState(false);
 
+  // Bottom Panel State
+  const [panelTabs, setPanelTabs] = useState<PanelTab[]>([]);
+  const [activePanelTabId, setActivePanelTabId] = useState<string>('');
+  const [isPanelOpen, setIsPanelOpen] = useState(false);
+
+  const handleClosePanelTab = (tabId: string) => {
+    setPanelTabs(prev => {
+      const newTabs = prev.filter(t => t.id !== tabId);
+      if (newTabs.length === 0) {
+        setIsPanelOpen(false);
+      } else if (activePanelTabId === tabId) {
+        setActivePanelTabId(newTabs[0].id);
+      }
+      return newTabs;
+    });
+  };
+
   // Selected modals target state
-  const [selectedPodForExec, setSelectedPodForExec] = useState<PodSummary | null>(null);
   const [selectedPodForPortForward, setSelectedPodForPortForward] = useState<PodSummary | null>(null);
   const [selectedResourceForDescribe, setSelectedResourceForDescribe] = useState<any | null>(null);
-  const [selectedResourceForLogs, setSelectedResourceForLogs] = useState<any | null>(null);
   const [selectedResourceForYaml, setSelectedResourceForYaml] = useState<EditableResourceRef | null>(null);
+
+  const handleOpenLogsTab = (res: { kind?: string; name: string; namespace?: string }) => {
+    const namespace = res.namespace || 'default';
+    const tabId = `logs-${namespace}-${res.name}`;
+    const existingTab = panelTabs.find(t => t.id === tabId);
+    if (!existingTab) {
+      setPanelTabs(prev => [...prev, {
+        id: tabId,
+        title: `Logs: ${res.name}`,
+        content: (
+          <LogsView
+            isActive={true}
+            onClose={() => handleClosePanelTab(tabId)}
+            resource={{ kind: res.kind || 'Pod', name: res.name, namespace }}
+          />
+        ),
+        onClose: () => handleClosePanelTab(tabId)
+      }]);
+    }
+    setActivePanelTabId(tabId);
+    setIsPanelOpen(true);
+  };
+
+  const handleOpenExecTab = (pod: PodSummary | { name: string; namespace?: string }) => {
+    const namespace = pod.namespace || 'default';
+    const tabId = `term-${namespace}-${pod.name}`;
+    const existingTab = panelTabs.find(t => t.id === tabId);
+    if (!existingTab) {
+      const podObj: PodSummary = 'status' in pod ? (pod as PodSummary) : {
+        name: pod.name,
+        namespace,
+        ready_containers: '1/1',
+        status: 'Running',
+        restarts: 0,
+        age: '0s',
+      };
+      setPanelTabs(prev => [...prev, {
+        id: tabId,
+        title: `Exec: ${pod.name}`,
+        content: (
+          <TerminalView
+            isActive={true}
+            onClose={() => handleClosePanelTab(tabId)}
+            pod={podObj}
+          />
+        ),
+        onClose: () => handleClosePanelTab(tabId)
+      }]);
+    }
+    setActivePanelTabId(tabId);
+    setIsPanelOpen(true);
+  };
   const [selectedScaleTarget, setSelectedScaleTarget] = useState<ScaleTarget | null>(null);
   const [confirmationTarget, setConfirmationTarget] = useState<{
     actionType: 'delete' | 'restart';
@@ -744,8 +812,8 @@ export const App: React.FC = () => {
                 onScalePod={handleScalePod}
                 onViewYaml={(pod) => setSelectedResourceForYaml({ kind: 'Pod', name: pod.name, namespace: pod.namespace })}
                 onDescribePod={(pod) => setSelectedResourceForDescribe({ kind: 'Pod', name: pod.name, namespace: pod.namespace })}
-                onLogsPod={(pod) => setSelectedResourceForLogs({ kind: 'Pod', name: pod.name, namespace: pod.namespace })}
-                onExecPod={setSelectedPodForExec}
+                onLogsPod={handleOpenLogsTab}
+                onExecPod={handleOpenExecTab}
                 onPortForwardPod={setSelectedPodForPortForward}
                 onDeletePod={(pod) =>
                   setConfirmationTarget({
@@ -770,7 +838,7 @@ export const App: React.FC = () => {
                 onFilterQueryChange={handleSetFilterQuery}
                 onSelectNamespaces={handleSetNamespaces}
                 onDescribe={(res) => setSelectedResourceForDescribe({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace })}
-                onLogs={(res) => setSelectedResourceForLogs({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace })}
+                onLogs={handleOpenLogsTab}
                 onScale={(res) => setSelectedScaleTarget({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace || 'default' })}
                 onRestart={(res) =>
                   setConfirmationTarget({
@@ -795,12 +863,12 @@ export const App: React.FC = () => {
             )}
           </div>
 
-          {/* AI Copilot Drawer */}
-          <AiCopilotDrawer
-            isOpen={isAiDrawerOpen}
-            onClose={() => setIsAiDrawerOpen(false)}
-            onApproveProposal={handleApproveAiProposal}
-            onRejectProposal={handleRejectAiProposal}
+          <BottomPanel
+            isOpen={isPanelOpen}
+            onClose={() => setIsPanelOpen(false)}
+            tabs={panelTabs}
+            activeTabId={activePanelTabId}
+            onTabChange={setActivePanelTabId}
           />
         </main>
       </div>
@@ -815,7 +883,7 @@ export const App: React.FC = () => {
         onSelectPod={(pod) => {
           handleSelectResource('pods');
           handleSetFilterQuery(pod.name);
-          setSelectedResourceForLogs({ kind: 'Pod', name: pod.name, namespace: pod.namespace });
+          handleOpenLogsTab({ kind: 'Pod', name: pod.name, namespace: pod.namespace });
         }}
         onOpenAi={() => setIsAiDrawerOpen(true)}
         onOpenAudit={() => setIsAuditModalOpen(true)}
@@ -828,9 +896,9 @@ export const App: React.FC = () => {
         resource={selectedResourceForDescribe}
         isReadOnly={isReadOnly}
         onViewYaml={(res) => setSelectedResourceForYaml({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace })}
-        onLogs={(res) => setSelectedResourceForLogs({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace })}
+        onLogs={handleOpenLogsTab}
         onPortForward={(res) => setSelectedPodForPortForward(res)}
-        onExec={(res) => setSelectedPodForExec({ name: res.name, namespace: res.namespace || 'default', ready_containers: '1/1', status: 'Running', restarts: 0, age: '0s' })}
+        onExec={handleOpenExecTab}
         onScale={(res) => setSelectedScaleTarget({ kind: res.kind || activeResource, name: res.name, namespace: res.namespace || 'default' })}
         onDelete={(res) =>
           setConfirmationTarget({
@@ -840,12 +908,6 @@ export const App: React.FC = () => {
             namespace: res.namespace || 'default',
           })
         }
-      />
-
-      <LogsModal
-        isOpen={!!selectedResourceForLogs}
-        onClose={() => setSelectedResourceForLogs(null)}
-        resource={selectedResourceForLogs}
       />
 
       <YamlEditorModal
@@ -887,11 +949,6 @@ export const App: React.FC = () => {
         }}
       />
 
-      <TerminalModal
-        isOpen={!!selectedPodForExec}
-        onClose={() => setSelectedPodForExec(null)}
-        pod={selectedPodForExec}
-      />
 
       <PortForwardModal
         isOpen={!!selectedPodForPortForward}
@@ -948,6 +1005,15 @@ export const App: React.FC = () => {
       <PortForwardFloatingBanner
         tunnels={activePortForwards}
         onStopTunnel={handleStopPortForward}
+      />
+
+
+
+      <AiCopilotDrawer
+        isOpen={isAiDrawerOpen}
+        onClose={() => setIsAiDrawerOpen(false)}
+        onApproveProposal={handleApproveAiProposal}
+        onRejectProposal={handleRejectAiProposal}
       />
     </div>
   );

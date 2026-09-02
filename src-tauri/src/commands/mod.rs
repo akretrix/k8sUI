@@ -215,7 +215,7 @@ pub async fn get_available_clusters(
         let current_ctx_name = kube_config.current_context.clone();
 
         for ctx in kube_config.contexts.iter() {
-            let env = if ctx.name.contains("prod") {
+            let env = if ctx.name.contains("prod") || ctx.name.contains("pdn") {
                 crate::connector::EnvironmentTier::Production
             } else if ctx.name.contains("staging") || ctx.name.contains("qa") {
                 crate::connector::EnvironmentTier::Staging
@@ -787,6 +787,8 @@ pub async fn start_terminal(
     namespace: String,
     pod_name: String,
     container: Option<String>,
+    cols: Option<u16>,
+    rows: Option<u16>,
 ) -> Result<ApiResponse<String>, String> {
     use tauri::Emitter;
     let connector = match state.session.get_active_connector().await {
@@ -815,6 +817,8 @@ pub async fn start_terminal(
             &actual_pod_name,
             container.as_deref(),
             vec![],
+            cols,
+            rows,
             output_tx,
         )
         .await
@@ -1638,4 +1642,25 @@ pub async fn open_external_url(url: String) -> Result<ApiResponse<()>, String> {
         let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
     }
     Ok(ApiResponse::ok(()))
+}
+
+#[tauri::command]
+pub async fn terminal_resize(
+    state: tauri::State<'_, crate::AppState>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<crate::commands::ApiResponse<()>, String> {
+    match state.terminal.resize(&session_id, cols, rows).await {
+        Ok(_) => Ok(crate::commands::ApiResponse::ok(())),
+        Err(e) => Ok(crate::commands::ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn save_file(path: String, contents: String) -> Result<crate::commands::ApiResponse<()>, String> {
+    match std::fs::write(&path, contents) {
+        Ok(_) => Ok(crate::commands::ApiResponse::ok(())),
+        Err(e) => Ok(crate::commands::ApiResponse::err(e.to_string())),
+    }
 }

@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ScaleModal } from './ScaleModal';
 import { YamlEditorModal } from './YamlEditorModal';
-import { LogsModal } from './LogsModal';
+import { LogsView } from './LogsView';
 import { PortForwardModal } from '../portforward/PortForwardModal';
 import { AuditLogModal } from '../audit/AuditLogModal';
 import { CommandPalette } from '../command-palette/CommandPalette';
@@ -93,12 +93,12 @@ describe('Comprehensive Modals and Interactive Actions Suite', () => {
     expect(screen.getByText(/Review Changes \(Dry Run\)/i)).toBeInTheDocument();
   });
 
-  it('renders LogsModal and displays live log lines', async () => {
+  it('renders LogsView and displays live log lines', async () => {
     const handleClose = vi.fn();
     render(
       <QueryClientProvider client={queryClient}>
-        <LogsModal
-          isOpen={true}
+        <LogsView
+          isActive={true}
           onClose={handleClose}
           resource={{ kind: 'Pod', name: 'app-backend-79d98-1', namespace: 'default' }}
         />

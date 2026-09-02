@@ -72,11 +72,6 @@ export const NewTabModal: React.FC<NewTabModalProps> = ({
     }
   }, [isOpen, activeCluster, selectedClusterId]);
 
-  if (!isOpen) return null;
-
-  const currentSelectedCluster =
-    clusters.find((c) => c.id === selectedClusterId) || activeCluster || clusters[0];
-
   const filteredClusters = useMemo(() => {
     if (!clusterSearch.trim()) return clusters;
     const q = clusterSearch.toLowerCase();
@@ -92,6 +87,11 @@ export const NewTabModal: React.FC<NewTabModalProps> = ({
       (r) => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q)
     );
   }, [resourceSearch]);
+
+  if (!isOpen) return null;
+
+  const currentSelectedCluster =
+    clusters.find((c) => c.id === selectedClusterId) || activeCluster || clusters[0];
 
   const handleCreate = () => {
     const cluster = currentSelectedCluster;

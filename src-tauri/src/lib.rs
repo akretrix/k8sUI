@@ -49,6 +49,7 @@ pub fn run() {
             commands::start_terminal,
             commands::close_terminal,
             commands::terminal_input,
+            commands::terminal_resize,
             commands::start_port_forward,
             commands::stop_port_forward,
             commands::list_port_forwards,
@@ -73,6 +74,7 @@ pub fn run() {
             commands::list_helm_repositories,
             commands::add_helm_repository,
             commands::open_external_url,
+            commands::save_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

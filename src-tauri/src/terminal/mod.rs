@@ -1,5 +1,7 @@
 use crate::connector::ConnectorError;
 
+use futures::channel::mpsc as futures_mpsc;
+use futures::SinkExt;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::{Api, AttachParams};
 use kube::Client;
@@ -12,6 +14,7 @@ pub struct TerminalSession {
     pub namespace: String,
     pub container: Option<String>,
     pub input_tx: mpsc::Sender<Vec<u8>>,
+    pub resize_tx: Option<futures_mpsc::Sender<kube::api::TerminalSize>>,
 }
 
 pub struct TerminalManager {
@@ -39,6 +42,8 @@ impl TerminalManager {
         pod_name: &str,
         container: Option<&str>,
         cmd: Vec<&str>,
+        cols: Option<u16>,
+        rows: Option<u16>,
         output_tx: mpsc::Sender<Vec<u8>>,
     ) -> Result<String, ConnectorError> {
         let session_id = format!("term-{}", chrono::Utc::now().timestamp_millis());
@@ -67,8 +72,9 @@ impl TerminalManager {
                 vec![
                     "/bin/sh".to_string(),
                     "-c".to_string(),
-                    "command -v bash >/dev/null 2>&1 && exec bash -l || (command -v sh >/dev/null 2>&1 && exec sh -l || exec /bin/sh)".to_string(),
+                    "export TERM=xterm-256color; command -v bash >/dev/null 2>&1 && exec bash -l || (command -v sh >/dev/null 2>&1 && exec sh -l || exec /bin/sh)".to_string(),
                 ],
+                vec!["/bin/bash".to_string(), "-l".to_string()],
                 vec!["/bin/bash".to_string()],
                 vec!["/bin/sh".to_string()],
                 vec!["/bin/ash".to_string()],
@@ -132,12 +138,18 @@ impl TerminalManager {
             });
         }
 
+        let mut resize_tx = attached.terminal_size();
+        if let (Some(tx), Some(w), Some(h)) = (&mut resize_tx, cols, rows) {
+            let _ = tx.send(kube::api::TerminalSize { width: w, height: h }).await;
+        }
+
         let session = TerminalSession {
             session_id: session_id.clone(),
             pod_name: pod_name.to_string(),
             namespace: namespace.to_string(),
             container: container.map(|c| c.to_string()),
             input_tx,
+            resize_tx,
         };
 
         let mut map = self.sessions.lock().await;
@@ -160,6 +172,19 @@ impl TerminalManager {
                 "Session {} not found",
                 session_id
             )))
+        }
+    }
+
+    pub async fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), ConnectorError> {
+        let mut map = self.sessions.lock().await;
+        if let Some(session) = map.get_mut(session_id) {
+            if let Some(tx) = &mut session.resize_tx {
+                // In kube-rs 0.93, TerminalSize expects width/height
+                let _ = tx.send(kube::api::TerminalSize { width: cols, height: rows }).await;
+            }
+            Ok(())
+        } else {
+            Err(ConnectorError::TerminalError(format!("Session {} not found", session_id)))
         }
     }
 

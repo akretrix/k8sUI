@@ -144,6 +144,7 @@ describe('ClusterSwitcher Component (Functional Tests)', () => {
         activeCluster={null}
         clusters={extendedClusters}
         onSelectCluster={vi.fn()}
+        onOpenAddAwsOrg={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button'));

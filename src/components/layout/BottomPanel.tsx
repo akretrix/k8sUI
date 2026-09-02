@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, ReactNode } from 'react';
-import { X, Maximize2, Minimize2, ChevronDown } from 'lucide-react';
+import { X, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export interface PanelTab {
   id: string;
@@ -26,12 +26,13 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
 }) => {
   const [height, setHeight] = useState(350);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Handle Drag Resizing
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isDragging || isMinimized) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const newHeight = window.innerHeight - e.clientY;
@@ -52,19 +53,19 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isMaximized]);
+  }, [isDragging, isMaximized, isMinimized]);
 
   if (!isOpen || tabs.length === 0) return null;
 
   return (
     <div
       ref={panelRef}
-      className={`fixed bottom-0 left-0 right-0 bg-[#090D16] border-t border-border z-40 flex flex-col transition-all duration-200 ease-in-out shadow-[0_-10px_30px_rgba(0,0,0,0.5)] ${
-        isMaximized ? 'top-12' : ''
+      className={`bg-[#090D16] border-t border-border z-40 flex flex-col transition-all duration-200 ease-in-out shadow-[0_-10px_30px_rgba(0,0,0,0.5)] shrink-0 w-full relative ${
+        isMaximized && !isMinimized ? 'absolute inset-0' : ''
       }`}
-      style={{ height: isMaximized ? 'calc(100vh - 3rem)' : `${height}px` }}
+      style={{ height: isMinimized ? '36px' : isMaximized ? '100%' : `${height}px` }}
     >
-      {!isMaximized && (
+      {!isMaximized && !isMinimized && (
         <div
           className="absolute top-0 left-0 right-0 h-1.5 cursor-row-resize hover:bg-emerald-500/50 z-50 transition-colors"
           onMouseDown={() => setIsDragging(true)}
@@ -105,33 +106,45 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
         </div>
 
         <div className="flex items-center space-x-1 shrink-0 pl-2">
+          {!isMinimized && (
+            <button
+              onClick={() => setIsMaximized(!isMaximized)}
+              className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+              title={isMaximized ? 'Restore Down' : 'Maximize Panel'}
+            >
+              {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <button
-            onClick={() => setIsMaximized(!isMaximized)}
+            onClick={() => setIsMinimized(!isMinimized)}
             className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-            title={isMaximized ? 'Restore Down' : 'Maximize Panel'}
+            title={isMinimized ? 'Expand Panel' : 'Minimize Panel'}
           >
-            {isMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            {isMinimized ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
+          <div className="w-px h-4 bg-border mx-1" />
           <button
             onClick={onClose}
-            className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-            title="Close Panel"
+            className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Close All"
           >
-            <ChevronDown className="w-4 h-4" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden relative">
-        {tabs.map((tab) => (
-          <div
-            key={tab.id}
-            className={`absolute inset-0 bg-[#090D16] ${activeTabId === tab.id ? 'block' : 'hidden'}`}
-          >
-            {tab.content}
-          </div>
-        ))}
-      </div>
+      {!isMinimized && (
+        <div className="flex-1 overflow-hidden relative">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`absolute inset-0 bg-[#090D16] ${activeTabId === tab.id ? 'block' : 'hidden'}`}
+            >
+              {tab.content}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

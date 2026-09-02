@@ -1107,10 +1107,14 @@ export const api = {
     invokeTauri<string[]>('list_containers', { namespace, podName }),
   listCustomResourceTypes: () =>
     invokeTauri<any[]>('list_custom_resource_types'),
-  startTerminal: (namespace: string, podName: string, container?: string) =>
-    invokeTauri<string>('start_terminal', { namespace, podName, container }),
+  startTerminal: (namespace: string, podName: string, container?: string, cols?: number, rows?: number) =>
+    invokeTauri<string>('start_terminal', { namespace, podName, container, cols, rows }),
   terminalInput: (sessionId: string, data: string) =>
     invokeTauri<void>('terminal_input', { sessionId, data }),
+  resizeTerminal: (sessionId: string, cols: number, rows: number) =>
+    invokeTauri<void>('terminal_resize', { sessionId, cols, rows }),
+  saveFile: (path: string, contents: string) =>
+    invokeTauri<void>('save_file', { path, contents }),
   closeTerminal: (sessionId: string) =>
     invokeTauri<void>('close_terminal', { sessionId }),
   startPortForward: (namespace: string, podName: string, containerPort: number, localPort: number) =>
