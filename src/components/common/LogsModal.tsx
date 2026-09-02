@@ -90,10 +90,12 @@ export const LogsModal: React.FC<LogsModalProps> = ({ isOpen, onClose, resource 
       .then((names) => {
         if (cancelled) return;
         setContainers(names);
-        if (names.length === 1) {
-          setContainer(names[0]);
-        } else if (!names.includes(container) && container !== 'all') {
-          setContainer('all'); // Reset if the current container doesn't exist in the new pod
+        if (names.length > 0) {
+          // If we have multiple containers, K8s REQUIRES a container to be specified.
+          // We default to the first one if the currently selected one is invalid or 'all'.
+          if (container === 'all' || !names.includes(container)) {
+            setContainer(names[0]);
+          }
         }
       })
       .catch(() => setContainers([]));
@@ -109,6 +111,11 @@ export const LogsModal: React.FC<LogsModalProps> = ({ isOpen, onClose, resource 
     setError(null);
     setSearchQuery('');
     setContainer('all');
+    setPrevious(false);
+    setTimestamps(false);
+    setIsFollowing(true);
+    setFilterOnlyMatches(false);
+    setLogLevel('all');
   }, [resource?.name]);
 
   // 3. Fetch logs based on pod and container selection
@@ -330,9 +337,6 @@ export const LogsModal: React.FC<LogsModalProps> = ({ isOpen, onClose, resource 
                   className="bg-transparent text-xs text-gray-200 outline-none cursor-pointer max-w-[130px] truncate font-mono"
                   title="Select Container"
                 >
-                  <option value="all" className="bg-surface-elevated text-gray-200">
-                    All Containers
-                  </option>
                   {containers.map((c) => (
                     <option key={c} value={c} className="bg-surface-elevated text-gray-200 font-mono">
                       {c}
