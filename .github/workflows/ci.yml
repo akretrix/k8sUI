@@ -95,7 +95,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: License check (Apache-2.0, MIT, BSD, ISC only)
-        run: npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --summary
+        run: pnpm dlx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --excludePrivatePackages --summary
       - name: Run Unit & Functional Tests
         run: pnpm test
       - name: Verify Production Build
