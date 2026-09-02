@@ -14,7 +14,13 @@ use tauri::{Emitter, Manager};
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
     let handle = app.handle();
     let menu = Menu::default(handle)?;
-    let check_updates = MenuItem::with_id(handle, "check-updates", "Check for Updates...", true, None::<&str>)?;
+    let check_updates = MenuItem::with_id(
+        handle,
+        "check-updates",
+        "Check for Updates...",
+        true,
+        None::<&str>,
+    )?;
 
     #[cfg(target_os = "macos")]
     {
