@@ -58,6 +58,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install Linux System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential libayatana-appindicator3-dev
       # dtolnay/rust-toolchain@stable is a floating branch by design — it exists
       # specifically to always resolve to the latest stable Rust release, and
       # pinning it to today's SHA would silently freeze the toolchain instead.
@@ -85,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@a3252b78c470c02df07e9d792d8704cc65c768ca # v3.0.0
         with:
           version: 9
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

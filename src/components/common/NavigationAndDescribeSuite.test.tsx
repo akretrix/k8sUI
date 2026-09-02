@@ -116,7 +116,7 @@ vi.mock('../../api/tauriClient', () => ({
       secret_type: 'kubernetes.io/tls',
       entries: [
         { key: 'tls.crt', value: '-----BEGIN CERTIFICATE-----', base64: 'LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t', is_binary: false },
-        { key: 'tls.key', value: '-----BEGIN PRIVATE KEY-----', base64: 'LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t', is_binary: false },
+        { key: 'tls.key', value: '[MOCK_TLS_PRIVATE_KEY_PAYLOAD]', base64: 'LS0tLS1QUklWQVRFIEtFWS0tLS0t', is_binary: false },
       ],
     }),
     updateSecretData: vi.fn().mockResolvedValue({

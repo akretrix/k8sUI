@@ -884,7 +884,7 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
         namespace: args.namespace || 'default',
         secret_type: 'Opaque',
         entries: [
-          { key: 'DATABASE_URL', value: 'postgresql://postgres:secretpassword@10.0.0.1:5432/acme', base64: 'cG9zdGdyZXNxbDovL3Bvc3RncmVzOnNlY3JldHBhc3N3b3JkQDEwLjAuMC4xOjU0MzIvem9uYWZyYW5jYQ==', is_binary: false },
+          { key: 'DATABASE_URL', value: 'postgresql://app_user@10.0.0.1:5432/acme', base64: 'cG9zdGdyZXNxbDovL2FwcF91c2VyQDEwLjAuMC4xOjU0MzIvem9uYWZyYW5jYQ==', is_binary: false },
           { key: 'JWT_SECRET', value: 'super-secure-jwt-signing-key-production-2026', base64: 'c3VwZXItc2VjdXJlLWp3dC1zaWduaW5nLWtleS1wcm9kdWN0aW9uLTIwMjY=', is_binary: false },
           { key: 'AWS_ACCESS_KEY_ID', value: 'AKIAIOSFODNN7EXAMPLE', base64: 'QUtJQUlPU0ZPRE5ON0VYQU1QTEU=', is_binary: false },
           { key: 'AWS_SECRET_ACCESS_KEY', value: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', base64: 'd0phbHJYVXRuRkVNSS9LN01ERU5HL2JQeFJmaUNZRVhBTVBMRUtFWQ==', is_binary: false },

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Git pre-push hook: Runs all security, license, and compilation gates before pushing
+set -e
+
+echo "Running pre-push security audit..."
+./scripts/security-check.sh
