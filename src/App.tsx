@@ -88,6 +88,24 @@ export const App: React.FC = () => {
     handleCheckForUpdates(false);
   }, []);
 
+  // Listen for native macOS app menu "Check for Updates..." trigger
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    if (isTauri) {
+      import('@tauri-apps/api/event').then(({ listen }) => {
+        listen('trigger-check-updates', () => {
+          setIsUpdateModalOpen(true);
+          handleCheckForUpdates(true);
+        }).then((fn) => {
+          unlisten = fn;
+        });
+      });
+    }
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // Bottom Panel State
   const [panelTabs, setPanelTabs] = useState<PanelTab[]>([]);
   const [activePanelTabId, setActivePanelTabId] = useState<string>('');

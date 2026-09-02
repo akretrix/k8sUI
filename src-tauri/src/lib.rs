@@ -8,7 +8,37 @@ pub mod portforward;
 pub mod terminal;
 
 use core::AppState;
-use tauri::Manager;
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
+use tauri::{Emitter, Manager};
+
+fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
+    let handle = app.handle();
+    let menu = Menu::default(handle)?;
+    let check_updates = MenuItem::with_id(handle, "check-updates", "Check for Updates...", true, None::<&str>)?;
+
+    #[cfg(target_os = "macos")]
+    {
+        let items = menu.items()?;
+        if let Some(MenuItemKind::Submenu(app_submenu)) = items.first() {
+            // Insert Check for Updates right after "About k8s-ui" (index 1)
+            let separator = PredefinedMenuItem::separator(handle)?;
+            app_submenu.insert(&check_updates, 1)?;
+            app_submenu.insert(&separator, 2)?;
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On Windows / Linux, add Check for Updates under Help menu
+        let items = menu.items()?;
+        if let Some(MenuItemKind::Submenu(help_submenu)) = items.last() {
+            help_submenu.prepend(&check_updates)?;
+        }
+    }
+
+    app.set_menu(menu)?;
+    Ok(())
+}
 
 pub fn run() {
     // Must run before any TLS connection is attempted.
@@ -22,9 +52,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            setup_menu(app)?;
             app.manage(AppState::new());
             tracing::info!("k8sUI initialized with zero-trust credential architecture");
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == "check-updates" {
+                let _ = app.emit("trigger-check-updates", ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::check_cluster_health,
