@@ -73,23 +73,31 @@ else
 fi
 
 # 5. Frontend License Compliance (license-checker)
-step "5/6 Auditing Frontend production package licenses (license-checker)"
+step "5/8 Auditing Frontend production package licenses (license-checker)"
 if pnpm dlx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --excludePrivatePackages --summary; then
   pass "Frontend package licenses compliant (Apache-2.0 / MIT / BSD / ISC)"
 else
   fail "Frontend dependencies contain unapproved or copyleft licenses"
 fi
 
-# 6. Frontend TypeScript & Static Typecheck
-step "6/7 Verifying TypeScript compilation (tsc --noEmit)"
+# 6. Frontend Dependency Vulnerability Audit (pnpm audit)
+step "6/8 Auditing Frontend dependencies for vulnerabilities (pnpm audit)"
+if pnpm audit --audit-level=high; then
+  pass "Zero high or critical frontend dependency vulnerabilities found"
+else
+  fail "Frontend dependencies have high or critical vulnerabilities"
+fi
+
+# 7. Frontend TypeScript & Static Typecheck
+step "7/8 Verifying TypeScript compilation (tsc --noEmit)"
 if pnpm exec tsc --noEmit; then
   pass "TypeScript compilation clean with zero errors"
 else
   fail "TypeScript compiler found type errors"
 fi
 
-# 7. AkreTrix Security Suite (akretrix-securitytests)
-step "7/7 Running AkreTrix Static Security Review (akretrix-sec)"
+# 8. AkreTrix Security Suite (akretrix-securitytests)
+step "8/8 Running AkreTrix Static Security Review (akretrix-sec)"
 if [[ -f "../akretrix-securitytests/bin/akretrix-sec.js" ]]; then
   if node ../akretrix-securitytests/bin/akretrix-sec.js code .; then
     pass "AkreTrix security test suite passed"
