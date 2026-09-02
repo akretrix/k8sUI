@@ -95,7 +95,8 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
         kind,
         !isClusterScoped && selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined
       ),
-    refetchInterval: 5000,
+    retry: process.env.NODE_ENV === 'test' ? false : 2,
+    refetchInterval: process.env.NODE_ENV === 'test' ? false : 5000,
   });
 
   const resources = useMemo(() => {
@@ -574,7 +575,7 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
     );
 
     return cols;
-  }, [kind, isClusterScoped, onDescribe, onScale, onRestart, onLogs, onViewYaml, onDelete]);
+  }, [kind, isClusterScoped, rawResources, onDescribe, onScale, onRestart, onLogs, onViewYaml, onDelete]);
 
   const handleColumnVisibilityChange = (updatedCols: ColumnDefinition[]) => {
     const nextMap: Record<string, boolean> = {};

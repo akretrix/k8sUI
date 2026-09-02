@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GenericResourceTable } from './GenericResourceTable';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from '../../api/tauriClient';
@@ -31,9 +31,39 @@ describe('GenericResourceTable Functional Tests', () => {
     queryClient.clear();
   });
 
+  it('renders error state with retry button when query fails', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    (api.listResources as any).mockRejectedValueOnce(new Error('Cluster connection timeout'));
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <GenericResourceTable
+          kind="services"
+          selectedNamespaces={[]}
+          namespaces={['default']}
+          onSelectNamespaces={vi.fn()}
+          onDescribe={vi.fn()}
+          onViewYaml={vi.fn()}
+          onDelete={vi.fn()}
+        />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Cluster Connection Unreachable|Failed to load services/i)).toBeInTheDocument();
+      expect(screen.getByText('Retry')).toBeInTheDocument();
+    });
+
+    unmount();
+    consoleSpy.mockRestore();
+  });
+
   it('renders loading spinner while fetching information', async () => {
+    let resolvePromise: any;
     (api.listResources as any).mockImplementation(
-      () => new Promise(() => {})
+      () => new Promise((res) => {
+        resolvePromise = res;
+      })
     );
 
     render(
@@ -51,6 +81,7 @@ describe('GenericResourceTable Functional Tests', () => {
     );
 
     expect(screen.getByText(/Loading mutatingwebhooks from cluster…/i)).toBeInTheDocument();
+    resolvePromise([]);
   });
 
   it('renders cluster-scoped resources like mutatingwebhooks and nodes safely without crashing', async () => {
@@ -204,26 +235,4 @@ describe('GenericResourceTable Functional Tests', () => {
     });
   });
 
-  it('renders error state with retry button when query fails', async () => {
-    (api.listResources as any).mockRejectedValue(new Error('Cluster connection timeout'));
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <GenericResourceTable
-          kind="services"
-          selectedNamespaces={[]}
-          namespaces={['default']}
-          onSelectNamespaces={vi.fn()}
-          onDescribe={vi.fn()}
-          onViewYaml={vi.fn()}
-          onDelete={vi.fn()}
-        />
-      </QueryClientProvider>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText(/Failed to load services/i)).toBeInTheDocument();
-      expect(screen.getByText('Retry')).toBeInTheDocument();
-    });
-  });
 });

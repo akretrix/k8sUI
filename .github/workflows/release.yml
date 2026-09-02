@@ -30,12 +30,14 @@ jobs:
   pre-release-gate:
     name: Pre-Release Verification Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
 
       - name: Install Linux System Dependencies
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential libayatana-appindicator3-dev
@@ -57,11 +59,14 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install cargo-deny
+        timeout-minutes: 4
         run: cargo install cargo-deny
       - name: Run cargo-deny
+        timeout-minutes: 3
         run: cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check
 
       - name: Run Dependency Audit & License Checks
+        timeout-minutes: 5
         run: |
           pnpm install --frozen-lockfile
           pnpm audit --audit-level=high
@@ -69,6 +74,7 @@ jobs:
           pnpm run build
 
       - name: Run Rust Security Linters & Tests
+        timeout-minutes: 5
         run: |
           cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
           cargo test --manifest-path src-tauri/Cargo.toml
@@ -80,6 +86,7 @@ jobs:
     name: Build (${{ matrix.platform.name }})
     needs: [pre-release-gate]
     runs-on: ${{ matrix.platform.os }}
+    timeout-minutes: 30
     permissions:
       contents: write # tauri-action creates/updates a draft GitHub Release
     strategy:
@@ -115,6 +122,7 @@ jobs:
 
       - name: Install System Dependencies (Linux)
         if: matrix.platform.os == 'ubuntu-22.04'
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file libayatana-appindicator3-dev
@@ -137,10 +145,12 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Frontend Dependencies
+        timeout-minutes: 4
         run: pnpm install --frozen-lockfile
 
       # Build Multiplatform Tauri Bundles
       - name: Build Tauri Desktop Application
+        timeout-minutes: 20
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -155,6 +165,7 @@ jobs:
           args: --target ${{ matrix.platform.target }}
 
       - name: Upload Artifacts for Signing
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: artifacts-${{ matrix.platform.name }}
@@ -173,6 +184,7 @@ jobs:
     name: Generate SBOM, Sign Artifacts & Publish Release
     needs: [build-and-package]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write # Creates/updates the GitHub Release and uploads its assets
       id-token: write # For Sigstore / Cosign keyless signing
@@ -191,14 +203,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Sigstore Cosign
+        timeout-minutes: 3
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 
       - name: Download all platform artifacts
+        timeout-minutes: 5
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: release-artifacts
 
       - name: Generate CycloneDX SBOMs (Rust + Node)
+        timeout-minutes: 5
         run: |
           mkdir -p sbom
           # Generate Rust SBOM
@@ -210,12 +225,14 @@ jobs:
           pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom/frontend-bom.cdx.json
 
       - name: Generate SHA256 Checksums
+        timeout-minutes: 2
         run: |
           cd release-artifacts
           find . -type f \( -name "*.dmg" -o -name "*.msi" -o -name "*.exe" -o -name "*.deb" -o -name "*.AppImage" \) -exec sha256sum {} + > ../SHA256SUMS
           cat ../SHA256SUMS
 
       - name: Sign Checksums & SBOMs via Sigstore Cosign (OIDC)
+        timeout-minutes: 3
         run: |
           echo "Signing SHA256SUMS and SBOM with Sigstore OIDC..."
           cosign sign-blob --yes --bundle SHA256SUMS.bundle.json SHA256SUMS
@@ -223,6 +240,7 @@ jobs:
           cosign sign-blob --yes --bundle sbom/frontend-bom.bundle.json sbom/frontend-bom.cdx.json
 
       - name: Create or Update GitHub Release
+        timeout-minutes: 5
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ github.ref_name || inputs.tag_name }}

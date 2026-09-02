@@ -1,10 +1,10 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ConfirmationModal } from './ConfirmationModal';
 
 describe('ConfirmationModal', () => {
-  it('renders delete modal and requires typing resource name to confirm', () => {
-    const onConfirm = vi.fn();
+  it('renders delete modal and requires typing resource name to confirm', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
 
     render(
@@ -37,12 +37,14 @@ describe('ConfirmationModal', () => {
     fireEvent.change(input, { target: { value: 'frontend-service' } });
     expect(confirmButton).not.toBeDisabled();
 
-    fireEvent.click(confirmButton);
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 
-  it('renders restart modal without requiring typing name', () => {
-    const onConfirm = vi.fn();
+  it('renders restart modal without requiring typing name', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
 
     render(
@@ -64,7 +66,9 @@ describe('ConfirmationModal', () => {
     const confirmButton = screen.getByRole('button', { name: /Confirm Restart/i });
     expect(confirmButton).not.toBeDisabled();
 
-    fireEvent.click(confirmButton);
+    await act(async () => {
+      fireEvent.click(confirmButton);
+    });
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 

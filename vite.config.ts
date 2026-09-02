@@ -35,12 +35,6 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     exclude: ["node_modules", "dist", ".idea", ".git", ".cache", "tests/**"],
-    // Run tests in a single thread sequentially to drastically reduce 
-    // memory footprint and avoid JSDOM OOM crashes, while remaining fast.
-    poolOptions: {
-      threads: {
-        singleThread: true,
-      },
-    },
+    pool: 'forks',
   },
 });

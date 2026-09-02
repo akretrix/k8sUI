@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { DescribeModal } from './DescribeModal';
 import { GenericResourceTable } from './GenericResourceTable';
@@ -306,7 +306,7 @@ describe('Comprehensive Functional Navigation & Describe Inspector Suite', () =>
     expect(screen.queryByText('Attached Volumes (0)')).not.toBeInTheDocument();
   });
 
-  it('maintains strict hook order consistency across closed and open states without throwing', () => {
+  it('maintains strict hook order consistency across closed and open states without throwing', async () => {
     const handleClose = vi.fn();
     const { rerender } = render(
       <DescribeModal
@@ -317,31 +317,37 @@ describe('Comprehensive Functional Navigation & Describe Inspector Suite', () =>
     );
 
     // Transition from closed to open with resource
-    rerender(
-      <DescribeModal
-        isOpen={true}
-        onClose={handleClose}
-        resource={{ kind: 'StatefulSet', name: 'redis-cluster', namespace: 'default' }}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={true}
+          onClose={handleClose}
+          resource={{ kind: 'StatefulSet', name: 'redis-cluster', namespace: 'default' }}
+        />
+      );
+    });
 
     // Transition back to closed
-    rerender(
-      <DescribeModal
-        isOpen={false}
-        onClose={handleClose}
-        resource={null}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={false}
+          onClose={handleClose}
+          resource={null}
+        />
+      );
+    });
 
     // Transition open again with different resource
-    rerender(
-      <DescribeModal
-        isOpen={true}
-        onClose={handleClose}
-        resource={{ kind: 'Deployment', name: 'api-server', namespace: 'default' }}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={true}
+          onClose={handleClose}
+          resource={{ kind: 'Deployment', name: 'api-server', namespace: 'default' }}
+        />
+      );
+    });
   });
 
   const ALL_RESOURCE_KINDS = [
@@ -421,44 +427,52 @@ describe('Comprehensive Functional Navigation & Describe Inspector Suite', () =>
     );
 
     // 2. Open with Pod
-    rerender(
-      <DescribeModal
-        isOpen={true}
-        resource={resource1}
-        onClose={vi.fn()}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={true}
+          resource={resource1}
+          onClose={vi.fn()}
+        />
+      );
+    });
 
     expect(await screen.findByText('test-pod')).toBeInTheDocument();
 
     // 3. Switch to Node
-    rerender(
-      <DescribeModal
-        isOpen={true}
-        resource={resource2}
-        onClose={vi.fn()}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={true}
+          resource={resource2}
+          onClose={vi.fn()}
+        />
+      );
+    });
 
     expect(await screen.findByText('test-node')).toBeInTheDocument();
 
     // 4. Close again
-    rerender(
-      <DescribeModal
-        isOpen={false}
-        resource={resource2}
-        onClose={vi.fn()}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={false}
+          resource={resource2}
+          onClose={vi.fn()}
+        />
+      );
+    });
 
     // 5. Reopen
-    rerender(
-      <DescribeModal
-        isOpen={true}
-        resource={resource1}
-        onClose={vi.fn()}
-      />
-    );
+    await act(async () => {
+      rerender(
+        <DescribeModal
+          isOpen={true}
+          resource={resource1}
+          onClose={vi.fn()}
+        />
+      );
+    });
 
     expect(await screen.findByText('test-pod')).toBeInTheDocument();
   });

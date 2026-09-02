@@ -13,7 +13,7 @@ export const ClusterDashboard: React.FC<ClusterDashboardProps> = ({ activeCluste
     queryKey: ['clusterOverview', activeCluster?.id],
     queryFn: () => api.getClusterOverview(),
     enabled: !!activeCluster,
-    refetchInterval: 5000,
+    refetchInterval: process.env.NODE_ENV === 'test' ? false : 5000,
   });
 
   return (

@@ -25,9 +25,12 @@ import { ScaleModal, ScaleTarget } from './components/common/ScaleModal';
 import { DesignSystemShowcase } from './components/design-system/DesignSystemShowcase';
 import { AwsSsoModal } from './components/cluster/AwsSsoModal';
 import { BottomPanel, PanelTab } from './components/layout/BottomPanel';
+import { ZoomHud } from './components/common/ZoomHud';
+import { useZoom } from './hooks/useZoom';
 import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
+  const { zoomLevel, showIndicator: showZoomIndicator, resetZoom } = useZoom();
 
   // Tabs State
   const [tabs, setTabs] = useState<AppTab[]>([
@@ -1014,6 +1017,12 @@ export const App: React.FC = () => {
         onClose={() => setIsAiDrawerOpen(false)}
         onApproveProposal={handleApproveAiProposal}
         onRejectProposal={handleRejectAiProposal}
+      />
+
+      <ZoomHud
+        zoomLevel={zoomLevel}
+        showIndicator={showZoomIndicator}
+        onReset={resetZoom}
       />
     </div>
   );

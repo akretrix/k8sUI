@@ -21,11 +21,13 @@ jobs:
   dco-check:
     name: DCO Verification (git commit -s)
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Verify Signed-off-by Trailer
+        timeout-minutes: 2
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             COMMITS=$(git log --no-merges origin/${{ github.base_ref }}..HEAD --format="%H")
@@ -42,11 +44,13 @@ jobs:
   secret-scan:
     name: Secret & Credential Leak Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Run Gitleaks
+        timeout-minutes: 3
         run: |
           wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
           tar -xzf gitleaks_8.18.2_linux_x64.tar.gz
@@ -56,9 +60,11 @@ jobs:
   rust-security:
     name: Rust SAST & License Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Linux System Dependencies
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential libayatana-appindicator3-dev
@@ -73,20 +79,26 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-deny
+        timeout-minutes: 4
         run: cargo install cargo-deny
       - name: Run cargo-deny
+        timeout-minutes: 3
         run: cargo deny --manifest-path src-tauri/Cargo.toml --config deny.toml check
       - name: Cargo fmt check
+        timeout-minutes: 2
         run: cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
       - name: Cargo clippy SAST (Zero Warnings)
+        timeout-minutes: 5
         run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
       - name: Cargo test
+        timeout-minutes: 5
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
   # 4. Frontend SAST & Dependency Audit
   frontend-security:
     name: Frontend Lint & License Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: pnpm/action-setup@a3252b78c470c02df07e9d792d8704cc65c768ca # v3.0.0
@@ -97,18 +109,23 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - name: Install dependencies
+        timeout-minutes: 4
         run: pnpm install --frozen-lockfile
       - name: License check (Apache-2.0, MIT, BSD, ISC only)
+        timeout-minutes: 2
         run: pnpm dlx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --excludePrivatePackages --summary
       - name: Run Unit & Functional Tests
+        timeout-minutes: 3
         run: pnpm test
       - name: Verify Production Build
+        timeout-minutes: 3
         run: pnpm run build
 
   # 5. Multi-Ecosystem Vulnerability Scan (Aqua Trivy)
   trivy-scan:
     name: Trivy Vulnerability Scan (SARIF)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read
@@ -116,6 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Run Trivy Scanner
+        timeout-minutes: 7
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: 'fs'
@@ -124,6 +142,7 @@ jobs:
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
       - name: Upload SARIF to GitHub Security Tab
+        timeout-minutes: 3
         uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
         if: always()
         continue-on-error: true
@@ -136,21 +155,26 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [rust-security, frontend-security, trivy-scan, secret-scan]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write # Required for keyless Sigstore / Cosign signing
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Cosign
+        timeout-minutes: 3
         uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
       - name: Generate Rust SBOM (CycloneDX)
+        timeout-minutes: 4
         run: |
           cargo install cargo-cyclonedx
           cargo cyclonedx --manifest-path src-tauri/Cargo.toml --output-format json -f rust-sbom.cdx.json
       - name: Generate Frontend SBOM (CycloneDX)
+        timeout-minutes: 3
         run: |
           pnpm dlx @cyclonedx/cyclonedx-npm --output-file frontend-sbom.cdx.json
       - name: Sign SBOM with Cosign Keyless OIDC
+        timeout-minutes: 3
         run: |
           echo "Signing SBOM artifacts using Sigstore OIDC..."
           cosign sign-blob --yes --bundle rust-sbom.bundle.json rust-sbom.cdx.json
