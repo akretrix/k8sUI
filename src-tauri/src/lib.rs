@@ -8,7 +8,9 @@ pub mod portforward;
 pub mod terminal;
 
 use core::AppState;
-use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem};
+#[cfg(target_os = "macos")]
+use tauri::menu::PredefinedMenuItem;
+use tauri::menu::{Menu, MenuItem, MenuItemKind};
 use tauri::{Emitter, Manager};
 
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
