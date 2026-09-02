@@ -21,7 +21,10 @@ import {
   AlertCircle,
   X,
   Coffee,
+  Sparkles,
+  RefreshCw,
 } from 'lucide-react';
+import { UpdateInfo } from '../../utils/updateChecker';
 
 export interface CustomResourceType {
   group: string;
@@ -36,6 +39,9 @@ interface SidebarProps {
   activeResource: string;
   onSelectResource: (resource: string, inNewTab?: boolean) => void;
   customResourceTypes?: CustomResourceType[];
+  updateInfo?: UpdateInfo | null;
+  onOpenUpdateModal?: () => void;
+  isCheckingUpdates?: boolean;
 }
 
 type NavGroup = {
@@ -140,6 +146,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeResource,
   onSelectResource,
   customResourceTypes = [],
+  updateInfo,
+  onOpenUpdateModal,
+  isCheckingUpdates = false,
 }) => {
   // Sidebar full collapse to mini icon rail
   const [isRailCollapsed, setIsRailCollapsed] = useState(false);
@@ -285,8 +294,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
         
-        {/* Collapsed Sponsor Footer */}
-        <div className="mt-auto pt-4 pb-2 w-full flex justify-center">
+        {/* Collapsed Update & Sponsor Footer */}
+        <div className="mt-auto pt-4 pb-2 w-full flex flex-col items-center space-y-2">
+          {updateInfo?.hasUpdate && (
+            <button
+              onClick={onOpenUpdateModal}
+              className="p-2 rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 transition-all border border-cyan-500/40 group cursor-pointer animate-pulse"
+              title={`Update Available: v${updateInfo.latestVersion}`}
+            >
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+            </button>
+          )}
           <button
             onClick={() => open('https://ko-fi.com/akretrix')}
             className="p-2.5 rounded-lg bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-all border border-amber-500/20 group cursor-pointer"
@@ -505,13 +523,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </div>
 
-      {/* Expanded Sponsor Footer */}
-      <div className="p-4 border-t border-border bg-surface-elevated flex items-center justify-center shrink-0">
+      {/* Expanded Footer with Version / Update Status & Sponsor */}
+      <div className="p-3 border-t border-border bg-surface-elevated flex flex-col space-y-2 shrink-0">
+        <div className="flex items-center justify-between px-1 text-xs text-gray-400">
+          <span className="font-mono text-[11px] text-gray-500">v{updateInfo?.currentVersion || '0.1.1'}</span>
+          
+          <button
+            onClick={onOpenUpdateModal}
+            className={`flex items-center space-x-1 px-1.5 py-0.5 rounded transition-all cursor-pointer ${
+              updateInfo?.hasUpdate
+                ? 'text-cyan-400 hover:text-cyan-300 font-semibold bg-cyan-950/50 border border-cyan-500/30 animate-pulse'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-surface'
+            }`}
+            title="Check for Updates"
+          >
+            {isCheckingUpdates ? (
+              <RefreshCw className="w-3 h-3 animate-spin text-brand-400" />
+            ) : updateInfo?.hasUpdate ? (
+              <Sparkles className="w-3 h-3 text-cyan-400" />
+            ) : (
+              <RefreshCw className="w-3 h-3 text-gray-500" />
+            )}
+            <span className="text-[11px]">
+              {isCheckingUpdates
+                ? 'Checking...'
+                : updateInfo?.hasUpdate
+                ? `v${updateInfo.latestVersion} Available`
+                : 'Check Updates'}
+            </span>
+          </button>
+        </div>
+
         <button 
           onClick={() => open('https://ko-fi.com/akretrix')}
-          className="w-full flex items-center justify-center space-x-2 py-2 px-3 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:text-amber-400 rounded-md border border-amber-500/20 transition-all font-medium text-sm group cursor-pointer"
+          className="w-full flex items-center justify-center space-x-2 py-1.5 px-3 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:text-amber-400 rounded-md border border-amber-500/20 transition-all font-medium text-xs group cursor-pointer"
         >
-          <Coffee className="w-4 h-4 fill-amber-500/20 group-hover:fill-amber-500/50 transition-colors" />
+          <Coffee className="w-3.5 h-3.5 fill-amber-500/20 group-hover:fill-amber-500/50 transition-colors" />
           <span>Support AkreTrix</span>
         </button>
       </div>

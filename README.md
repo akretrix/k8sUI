@@ -73,6 +73,31 @@
 
 ---
 
+## 📦 Download Pre-Built Binaries
+
+Pre-compiled binaries for each release are available on the [GitHub Releases page](https://github.com/akretrix/k8sUI/releases).
+
+| Platform | Format | Architecture | Notes |
+|:---|:---|:---|:---|
+| **macOS** | `.dmg` | Apple Silicon (ARM64) & Intel (x86_64) | See [macOS Gatekeeper note](#-macos-gatekeeper--quarantine-note) |
+| **Windows** | `.msi`, `.exe` | x86_64 (Windows 10 / 11) | WiX Installer & NSIS portable setup |
+| **Linux** | `.deb`, `.AppImage` | x86_64 (Debian / Ubuntu / Universal) | Native package & AppImage binary |
+
+### 🍎 macOS Gatekeeper & Quarantine Note
+
+Because k8sUI is an open-source project distributed outside the Mac App Store without an Apple Developer ID certificate, macOS attaches the `com.apple.quarantine` extended attribute when downloaded via a web browser, displaying:
+> `“k8s-ui” is damaged and can’t be opened. You should move it to the Trash.`
+
+The package is **not corrupt**. To open k8sUI on macOS:
+1. Drag `k8s-ui.app` from the `.dmg` into `/Applications`.
+2. In Terminal, run:
+   ```bash
+   xattr -cr /Applications/k8s-ui.app
+   ```
+3. Open `k8s-ui` from Applications. Alternatively, go to **System Settings > Privacy & Security > Security** and click **"Open Anyway"**.
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites

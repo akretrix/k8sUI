@@ -27,6 +27,8 @@ import { AwsSsoModal } from './components/cluster/AwsSsoModal';
 import { BottomPanel, PanelTab } from './components/layout/BottomPanel';
 import { ZoomHud } from './components/common/ZoomHud';
 import { useZoom } from './hooks/useZoom';
+import { checkForAppUpdates, UpdateInfo } from './utils/updateChecker';
+import { UpdateModal } from './components/common/UpdateModal';
 import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
@@ -63,6 +65,28 @@ export const App: React.FC = () => {
   const [isAddAwsOrgOpen, setIsAddAwsOrgOpen] = useState(false);
   const [isDesignSystemOpen, setIsDesignSystemOpen] = useState(false);
   const [isNewTabModalOpen, setIsNewTabModalOpen] = useState(false);
+
+  // In-app Update Checker State
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+
+  const handleCheckForUpdates = async (force = false) => {
+    setIsCheckingUpdates(true);
+    try {
+      const info = await checkForAppUpdates(force);
+      if (info) {
+        setUpdateInfo(info);
+      }
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
+  // Run a cached update check once when the app launches
+  useEffect(() => {
+    handleCheckForUpdates(false);
+  }, []);
 
   // Bottom Panel State
   const [panelTabs, setPanelTabs] = useState<PanelTab[]>([]);
@@ -776,11 +800,20 @@ export const App: React.FC = () => {
         onOpenAddAwsOrg={() => setIsAddAwsOrgOpen(true)}
         onOpenDesignSystem={() => setIsDesignSystemOpen(true)}
         onReconnect={handleReconnect}
+        updateInfo={updateInfo}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
       />
 
       {/* Main Workload View with Sidebar */}
       <div className="flex-1 flex min-h-0 relative">
-        <Sidebar activeResource={activeResource} onSelectResource={handleSelectResource} customResourceTypes={customResourceTypes} />
+        <Sidebar
+          activeResource={activeResource}
+          onSelectResource={handleSelectResource}
+          customResourceTypes={customResourceTypes}
+          updateInfo={updateInfo}
+          onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+          isCheckingUpdates={isCheckingUpdates}
+        />
         
         <main className="flex-1 flex min-h-0 relative flex-col overflow-hidden">
           {/* Top Multi-Tab Bar */}
@@ -1023,6 +1056,14 @@ export const App: React.FC = () => {
         zoomLevel={zoomLevel}
         showIndicator={showZoomIndicator}
         onReset={resetZoom}
+      />
+
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        updateInfo={updateInfo}
+        isChecking={isCheckingUpdates}
+        onCheckAgain={() => handleCheckForUpdates(true)}
       />
     </div>
   );

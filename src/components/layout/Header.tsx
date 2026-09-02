@@ -2,7 +2,7 @@ import React from 'react';
 import { ClusterSwitcher } from '../cluster/ClusterSwitcher';
 import { ReadOnlyToggle } from '../cluster/ReadOnlyToggle';
 import { ClusterContextSummary, ClusterHealthInfo, ActivePortForward } from '../../types/cluster';
-import { Bot, Search, SlidersHorizontal, Shield, Palette } from 'lucide-react';
+import { Bot, Search, SlidersHorizontal, Shield, Palette, Sparkles } from 'lucide-react';
 import { LogoLockup } from '../../assets/brand/LogoLockup';
 import { PortForwardGlobalWidget } from '../portforward/PortForwardGlobalWidget';
 
@@ -27,6 +27,8 @@ interface HeaderProps {
   onOpenAddAwsOrg: () => void;
   onOpenDesignSystem?: () => void;
   onReconnect?: () => void;
+  updateInfo?: any;
+  onOpenUpdateModal?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -50,6 +52,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddAwsOrg,
   onOpenDesignSystem,
   onReconnect,
+  updateInfo,
+  onOpenUpdateModal,
 }) => {
   return (
     <header className="h-14 border-b border-border bg-surface/90 backdrop-blur px-4 flex items-center justify-between shrink-0 select-none z-30">
@@ -77,24 +81,33 @@ export const Header: React.FC<HeaderProps> = ({
         />
       </div>
 
-      {/* Middle section: Global Command Palette search trigger */}
-      <div className="hidden md:flex items-center flex-1 max-w-sm mx-4">
-        <button
-          onClick={onOpenCommandPalette}
-          className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg bg-surface-elevated/70 border border-border/80 text-xs text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors"
-        >
-          <div className="flex items-center space-x-2">
-            <Search className="w-3.5 h-3.5" />
-            <span>Search pods, commands, namespaces...</span>
-          </div>
-          <kbd className="px-1.5 py-0.5 rounded bg-surface border border-border text-[10px] font-mono text-gray-400">
-            ⌘K
-          </kbd>
-        </button>
-      </div>
+      {/* Center: Command Palette Trigger */}
+      <button
+        onClick={onOpenCommandPalette}
+        className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg border border-border bg-surface-elevated/60 text-xs text-gray-400 hover:text-gray-200 hover:border-gray-600 transition-colors w-72 justify-between"
+      >
+        <span className="flex items-center space-x-2">
+          <Search className="w-3.5 h-3.5 text-gray-400" />
+          <span>Search pods, clusters...</span>
+        </span>
+        <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-surface border border-border rounded text-gray-400">
+          ⌘K
+        </kbd>
+      </button>
 
-      {/* Right section: Design System, Read-Only toggle, Advanced toggle, Audit, AI */}
-      <div className="flex items-center space-x-2 sm:space-x-3">
+      {/* Right Controls */}
+      <div className="flex items-center space-x-2">
+        {updateInfo?.hasUpdate && (
+          <button
+            onClick={onOpenUpdateModal}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-all shadow-sm shadow-cyan-950 animate-pulse cursor-pointer"
+            title={`Update Available: v${updateInfo.latestVersion}`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">v{updateInfo.latestVersion} Available</span>
+          </button>
+        )}
+
         {onOpenDesignSystem && (
           <button
             onClick={onOpenDesignSystem}

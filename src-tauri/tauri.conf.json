@@ -40,7 +40,7 @@
       "frameworks": [],
       "minimumSystemVersion": "",
       "exceptionDomain": "",
-      "signingIdentity": null,
+      "signingIdentity": "-",
       "entitlements": null
     }
   }

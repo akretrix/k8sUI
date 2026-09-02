@@ -164,6 +164,30 @@ jobs:
           prerelease: false
           args: --target ${{ matrix.platform.target }}
 
+      - name: Verify Package Integrity Before Upload
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          echo "=== Verifying Generated Bundles for ${{ matrix.platform.name }} ==="
+          if [[ "${{ matrix.platform.os }}" == *"macos"* ]]; then
+            for dmg in src-tauri/target/${{ matrix.platform.target }}/release/bundle/dmg/*.dmg; do
+              [ -f "$dmg" ] || continue
+              echo "Verifying DMG structure: $dmg"
+              hdiutil verify "$dmg"
+            done
+          elif [[ "${{ matrix.platform.os }}" == *"ubuntu"* ]]; then
+            for deb in src-tauri/target/${{ matrix.platform.target }}/release/bundle/deb/*.deb; do
+              [ -f "$deb" ] || continue
+              echo "Verifying DEB package: $deb"
+              dpkg-deb -I "$deb"
+            done
+            for appimage in src-tauri/target/${{ matrix.platform.target }}/release/bundle/appimage/*.AppImage; do
+              [ -f "$appimage" ] || continue
+              echo "Verifying AppImage binary: $appimage"
+              test -s "$appimage"
+            done
+          fi
+
       - name: Upload Artifacts for Signing
         timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
