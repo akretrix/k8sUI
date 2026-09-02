@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <linearGradient id="cubeTop" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA" />
+      <stop offset="50%" stop-color="#326CE5" />
+      <stop offset="100%" stop-color="#2557C7" />
+    </linearGradient>
+    <linearGradient id="cubeLeft" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2557C7" />
+      <stop offset="100%" stop-color="#143175" />
+    </linearGradient>
+    <linearGradient id="cubeRight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1D44A5" />
+      <stop offset="100%" stop-color="#0E214F" />
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#93C5FD" />
+      <stop offset="50%" stop-color="#326CE5" />
+      <stop offset="100%" stop-color="#326CE5" stop-opacity="0" />
+    </radialGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="12" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Outer Hexagon Orbit Mesh -->
+  <polygon
+    points="256,92 398,174 398,338 256,420 114,338 114,174"
+    stroke="#326CE5"
+    stroke-opacity="0.4"
+    stroke-width="3"
+    stroke-dasharray="10 8"
+    fill="none"
+  />
+
+  <!-- Spokes connecting to vertices -->
+  <g stroke="#326CE5" stroke-width="2.5" stroke-opacity="0.6">
+    <line x1="256" y1="92" x2="256" y2="150" />
+    <line x1="398" y1="174" x2="348" y2="203" />
+    <line x1="398" y1="338" x2="348" y2="309" />
+    <line x1="256" y1="420" x2="256" y2="362" />
+    <line x1="114" y1="338" x2="164" y2="309" />
+    <line x1="114" y1="174" x2="164" y2="203" />
+  </g>
+
+  <!-- Main Isometric Cluster Node -->
+  <g filter="url(#glow)">
+    <polygon points="256,150 348,203 256,256 164,203" fill="url(#cubeTop)" stroke="#93C5FD" stroke-width="2.5" stroke-linejoin="round"/>
+    <polygon points="164,203 256,256 256,362 164,309" fill="url(#cubeLeft)" stroke="#326CE5" stroke-width="2.5" stroke-linejoin="round"/>
+    <polygon points="256,256 348,203 348,309 256,362" fill="url(#cubeRight)" stroke="#2557C7" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Vertex Nodes -->
+  <circle cx="256" cy="92" r="14" fill="#0B0F17" stroke="#326CE5" stroke-width="4" />
+  <circle cx="256" cy="92" r="5" fill="#60A5FA" />
+  <circle cx="114" cy="338" r="14" fill="#0B0F17" stroke="#326CE5" stroke-width="4" />
+  <circle cx="114" cy="338" r="5" fill="#60A5FA" />
+  <circle cx="398" cy="338" r="14" fill="#0B0F17" stroke="#326CE5" stroke-width="4" />
+  <circle cx="398" cy="338" r="5" fill="#60A5FA" />
+  <circle cx="114" cy="174" r="12" fill="#0B0F17" stroke="#326CE5" stroke-width="3" />
+  <circle cx="114" cy="174" r="4" fill="#60A5FA" />
+  <circle cx="256" cy="420" r="12" fill="#0B0F17" stroke="#326CE5" stroke-width="3" />
+  <circle cx="256" cy="420" r="4" fill="#60A5FA" />
+
+  <!-- Active Cluster Status Dot -->
+  <circle cx="398" cy="174" r="16" fill="#0B0F17" stroke="#10B981" stroke-width="4" />
+  <circle cx="398" cy="174" r="7" fill="#34D399" filter="url(#glow)" />
+
+  <!-- Center Core Glowing Heart -->
+  <circle cx="256" cy="203" r="16" fill="url(#centerGlow)" />
+  <circle cx="256" cy="203" r="6" fill="#FFFFFF" />
+</svg>

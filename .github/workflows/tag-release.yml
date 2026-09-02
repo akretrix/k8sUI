@@ -1,0 +1,92 @@
+name: Tag New Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: 'Custom version override (e.g. 0.2.0, leaves empty to auto-bump)'
+        required: false
+        type: string
+
+# contents:write is genuinely required here, not just left over from a template —
+# this job commits version bumps and pushes a signed tag straight to main
+# (`git push origin main`, `git push origin "$NEW_TAG"`). That is real write
+# activity, unlike release.yml's old workflow-wide grant. pull-requests:write is
+# dropped: nothing in this job opens a PR.
+permissions:
+  contents: write
+
+jobs:
+  tag-release:
+    name: Bump Versions, Generate Changelog & Tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node & Git User
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+
+      - name: Configure Git for DCO Sign-off
+        run: |
+          git config --global user.name "k8sUI Release Bot"
+          git config --global user.email "bot@akretrix.org"
+
+      - name: Determine New Version
+        id: versioning
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+
+          if [ -n "${{ inputs.custom_version }}" ]; then
+            NEW_VERSION="${{ inputs.custom_version }}"
+          else
+            npm version ${{ inputs.version_type }} --no-git-tag-version
+            NEW_VERSION=$(node -p "require('./package.json').version")
+          fi
+
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=v$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumping to version $NEW_VERSION (tag: v$NEW_VERSION)"
+
+      - name: Update Rust & Tauri Manifest Versions
+        run: |
+          NEW_VER="${{ steps.versioning.outputs.NEW_VERSION }}"
+
+          # Update src-tauri/Cargo.toml
+          sed -i.bak "s/^version = \".*\"/version = \"$NEW_VER\"/" src-tauri/Cargo.toml
+          rm -f src-tauri/Cargo.toml.bak
+
+          # Update src-tauri/tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json'));
+            conf.version = '$NEW_VER';
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+
+      - name: Commit Version Bumps with DCO Sign-off
+        run: |
+          NEW_TAG="${{ steps.versioning.outputs.TAG_NAME }}"
+          git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json package-lock.json 2>/dev/null || true
+          git commit -s -m "chore(release): bump version to $NEW_TAG"
+          git push origin main
+
+      - name: Create and Push Release Tag
+        run: |
+          NEW_TAG="${{ steps.versioning.outputs.TAG_NAME }}"
+          git tag -s -a "$NEW_TAG" -m "Release $NEW_TAG" || git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
+          git push origin "$NEW_TAG"
+          echo "Successfully pushed tag $NEW_TAG. Multiplatform build pipeline triggered."

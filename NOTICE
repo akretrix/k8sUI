@@ -1,0 +1,18 @@
+k8sUI
+Copyright 2026 k8sUI Authors and Contributors.
+
+This product includes software developed by the k8sUI Project
+(https://github.com/k9sui/k9sui).
+
+This product includes third-party software components licensed under
+OSI-approved licenses:
+- Tauri (Apache-2.0 / MIT) - https://tauri.app
+- kube-rs (Apache-2.0) - https://github.com/kube-rs/kube
+- k8s-openapi (Apache-2.0) - https://github.com/Arnavion/k8s-openapi
+- aws-sdk-sts / aws-config (Apache-2.0) - https://github.com/awslabs/aws-sdk-rust
+- azure_identity (MIT) - https://github.com/Azure/azure-sdk-for-rust
+- Tabler Icons (MIT) - https://tabler.io/icons
+- React (MIT) - https://react.dev
+- TanStack Table / Query (MIT) - https://tanstack.com
+- xterm.js (MIT) - https://github.com/xtermjs/xterm.js
+- Tailwind CSS (MIT) - https://tailwindcss.com

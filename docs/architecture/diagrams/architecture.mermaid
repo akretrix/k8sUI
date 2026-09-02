@@ -1,0 +1,49 @@
+```mermaid
+graph TD
+    subgraph UI ["Desktop UI (React + Tailwind + shadcn/ui)"]
+        CS[Cluster Switcher / Env Color]
+        RO[Read-Only Safeguard]
+        CP[Command Palette Cmd+K]
+        PT[Live Pod Table TanStack]
+        DF[Dry-Run Diff Modal]
+        TX[xterm.js Terminal]
+        PF[Port Forward Manager]
+        AI_UI[AI Copilot Drawer]
+    end
+
+    subgraph Core ["Rust App Core (Tauri IPC)"]
+        CB[Credential Broker / Keyring]
+        SS[Session State & Env Tagging]
+        AL[Tamper-Evident Audit Log]
+        RE[Secret Redaction Engine]
+        AI_ENG[AI Safety & Whitelist Engine]
+    end
+
+    subgraph Connectors ["Connector Layer (ClusterConnector Trait)"]
+        LC[LocalConnector kubeconfig]
+        EC[EksConnector aws-sdk-sts]
+        AC[AksConnector azure_identity]
+    end
+
+    subgraph Clusters ["Kubernetes API Servers"]
+        K1[Local Kind / Minikube]
+        K2[AWS EKS API Server]
+        K3[Azure AKS API Server]
+    end
+
+    subgraph AIProviders ["LLM Providers"]
+        ANT[Anthropic Claude API]
+        OAI[OpenAI API]
+        OLL[Local Ollama / Llama.cpp]
+    end
+
+    UI <-->|Tauri IPC / Scoped Events| Core
+    Core --> Connectors
+    LC -->|Direct TLS| K1
+    EC -->|Short-lived STS Token| K2
+    AC -->|Short-lived AAD Token| K3
+
+    AI_UI <--> AI_ENG
+    AI_ENG --> AIProviders
+    AI_ENG -->|Mutations Require Diff Approval| DF
+```

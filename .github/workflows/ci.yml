@@ -1,0 +1,148 @@
+name: CI & Security Verification Matrix
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1' # Weekly security baseline scan
+
+permissions:
+  contents: read
+  # id-token and security-events are granted per-job below, not here — only
+  # release-signing needs to mint an OIDC token and only trivy-scan uploads a
+  # SARIF report. packages:write was granted workflow-wide with nothing in this
+  # file that publishes a package or pushes a container image; dropped.
+
+jobs:
+  # 1. Developer Certificate of Origin (DCO) Check
+  dco-check:
+    name: DCO Verification (git commit -s)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by Trailer
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            COMMITS=$(git log --no-merges origin/${{ github.base_ref }}..HEAD --format="%H")
+            for COMMIT in $COMMITS; do
+              if ! git log -n 1 --format="%B" $COMMIT | grep -q "Signed-off-by:"; then
+                echo "::error::Commit $COMMIT is missing 'Signed-off-by:' trailer (DCO requirement)."
+                exit 1
+              fi
+            done
+            echo "All PR commits comply with DCO 1.1."
+          fi
+
+  # 2. Secret Scanning (Gitleaks)
+  secret-scan:
+    name: Secret & Credential Leak Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 3. Rust SAST, Auditing & License Verification
+  rust-security:
+    name: Rust SAST & License Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # dtolnay/rust-toolchain@stable is a floating branch by design — it exists
+      # specifically to always resolve to the latest stable Rust release, and
+      # pinning it to today's SHA would silently freeze the toolchain instead.
+      # Left unpinned deliberately; it carries far less supply-chain risk than a
+      # third-party action doing SBOM/signing work, since a bad Rust release
+      # fails loudly (compile errors) rather than exfiltrating anything.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0ffd23969fcce89fd868 # v1.6.3
+        with:
+          command: check
+          arguments: --config deny.toml
+      - name: Cargo fmt check
+        run: cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
+      - name: Cargo clippy SAST (Zero Warnings)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+      - name: Cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # 4. Frontend SAST & Dependency Audit
+  frontend-security:
+    name: Frontend Lint & License Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 20
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: License check (Apache-2.0, MIT, BSD, ISC only)
+        run: npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --summary
+      - name: Run Unit & Functional Tests
+        run: npm test
+      - name: Verify Production Build
+        run: npm run build
+
+  # 5. Multi-Ecosystem Vulnerability Scan (Aqua Trivy)
+  trivy-scan:
+    name: Trivy Vulnerability Scan (SARIF)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # Required for SARIF upload to GitHub Security tab
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Run Trivy Scanner
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+      - name: Upload SARIF to GitHub Security Tab
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3.37.9
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # 6. Release Build: CycloneDX SBOM + Sigstore/Cosign Signing
+  release-signing:
+    name: CycloneDX SBOM & Cosign Signing
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [rust-security, frontend-security, trivy-scan, secret-scan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # Required for keyless Sigstore / Cosign signing
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+      - name: Generate Rust SBOM (CycloneDX)
+        run: |
+          cargo install cargo-cyclonedx
+          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --output-format json -f rust-sbom.cdx.json
+      - name: Generate Frontend SBOM (CycloneDX)
+        run: |
+          npx @cyclonedx/cyclonedx-npm --output-file frontend-sbom.cdx.json
+      - name: Sign SBOM with Cosign Keyless OIDC
+        run: |
+          echo "Signing SBOM artifacts using Sigstore OIDC..."
+          cosign sign-blob --yes --bundle rust-sbom.bundle.json rust-sbom.cdx.json
+          cosign sign-blob --yes --bundle frontend-sbom.bundle.json frontend-sbom.cdx.json

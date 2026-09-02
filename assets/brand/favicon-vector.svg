@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <!-- Outer Hexagon Frame -->
+  <polygon 
+    points="16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5" 
+    stroke="#326CE5" 
+    stroke-width="2.5" 
+    stroke-linejoin="round"
+    fill="#0B0F17"
+  />
+  
+  <!-- Central Cluster Hub -->
+  <circle cx="16" cy="16" r="3.5" fill="#4D88FF" />
+
+  <!-- Spokes connecting to vertices -->
+  <path 
+    d="M16 5.5V12.5 M25 11L19 14.5 M25 21L19 17.5 M16 26.5V19.5 M7 21L13 17.5 M7 11L13 14.5" 
+    stroke="#326CE5" 
+    stroke-width="1.75" 
+    stroke-linecap="round"
+  />
+
+  <!-- Active Cluster Status Dot (Top-Right Vertex) -->
+  <circle cx="29" cy="9.5" r="2.25" fill="#10B981" />
+</svg>

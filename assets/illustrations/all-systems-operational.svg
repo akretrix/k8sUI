@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" fill="none">
+  <defs>
+    <radialGradient id="greenGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <circle cx="200" cy="150" r="120" fill="url(#greenGlow)" />
+
+  <polygon
+    points="200,60 280,105 280,195 200,240 120,195 120,105"
+    stroke="#10B981"
+    stroke-width="2"
+    stroke-dasharray="8 6"
+    fill="#064E3B"
+    fill-opacity="0.2"
+  />
+
+  <g stroke="#34D399" stroke-width="2" opacity="0.8">
+    <line x1="200" y1="60" x2="200" y2="150" />
+    <line x1="280" y1="105" x2="200" y2="150" />
+    <line x1="280" y1="195" x2="200" y2="150" />
+    <line x1="200" y1="240" x2="200" y2="150" />
+    <line x1="120" y1="195" x2="200" y2="150" />
+    <line x1="120" y1="105" x2="200" y2="150" />
+  </g>
+
+  <circle cx="200" cy="150" r="26" fill="#111827" stroke="#10B981" stroke-width="3" />
+  <circle cx="200" cy="150" r="16" fill="#10B981" />
+  <path d="M194,150 L198,154 L206,146" stroke="#FFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <circle cx="200" cy="60" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+  <circle cx="280" cy="105" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+  <circle cx="280" cy="195" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+  <circle cx="200" cy="240" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+  <circle cx="120" cy="195" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+  <circle cx="120" cy="105" r="10" fill="#047857" stroke="#34D399" stroke-width="2" />
+</svg>

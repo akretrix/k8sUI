@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none" stroke="#FFFFFF">
+  <!-- Outer Hexagon -->
+  <polygon
+    points="256,92 398,174 398,338 256,420 114,338 114,174"
+    stroke-width="12"
+    stroke-dasharray="14 10"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Internal Spokes -->
+  <g stroke-width="10" stroke-linecap="round">
+    <line x1="256" y1="92" x2="256" y2="150" />
+    <line x1="398" y1="174" x2="348" y2="203" />
+    <line x1="398" y1="338" x2="348" y2="309" />
+    <line x1="256" y1="420" x2="256" y2="362" />
+    <line x1="114" y1="338" x2="164" y2="309" />
+    <line x1="114" y1="174" x2="164" y2="203" />
+  </g>
+
+  <!-- Isometric Cube Faces -->
+  <polygon points="256,150 348,203 256,256 164,203" stroke-width="12" stroke-linejoin="round"/>
+  <polygon points="164,203 256,256 256,362 164,309" stroke-width="12" stroke-linejoin="round"/>
+  <polygon points="256,256 348,203 348,309 256,362" stroke-width="12" stroke-linejoin="round"/>
+
+  <!-- Vertex Nodes -->
+  <circle cx="256" cy="92" r="16" fill="#FFFFFF" />
+  <circle cx="398" cy="174" r="18" fill="#FFFFFF" />
+  <circle cx="398" cy="338" r="16" fill="#FFFFFF" />
+  <circle cx="256" cy="420" r="16" fill="#FFFFFF" />
+  <circle cx="114" cy="338" r="16" fill="#FFFFFF" />
+  <circle cx="114" cy="174" r="16" fill="#FFFFFF" />
+
+  <!-- Center Heart Dot -->
+  <circle cx="256" cy="203" r="14" fill="#FFFFFF" />
+</svg>

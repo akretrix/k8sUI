@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primary Brand (K8s Inspired) */
+  --brand-50: #EEF4FF;
+  --brand-100: #DCE7FE;
+  --brand-200: #B8D0FC;
+  --brand-300: #8FB4FA;
+  --brand-400: #60A5FA;
+  --brand-500: #326CE5;
+  --brand-600: #2557C7;
+  --brand-700: #1D44A5;
+  --brand-800: #143175;
+  --brand-900: #0E214F;
+
+  /* Neutral Canvas */
+  --canvas-base: #0B0F17;
+  --canvas-surface: #111827;
+  --canvas-card: #111827;
+  --canvas-elevated: #1F2937;
+  --border-subdued: #1F2937;
+  --text-primary: #F9FAFB;
+  --text-muted: #9CA3AF;
+
+  /* Semantic Status */
+  --semantic-healthy: #10B981;
+  --semantic-healthy-pulse: #34D399;
+  --semantic-warning: #F59E0B;
+  --semantic-critical: #EF4444;
+  --semantic-pending: #6366F1;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: var(--canvas-base);
+  }
+
+  body {
+    @apply text-gray-100 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom scrollbar for desktop look and feel */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0B0F17;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1F2937;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #374151;
+  }
+}
+

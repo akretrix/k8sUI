@@ -1,0 +1,26 @@
+# Node / Vite
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+
+# Tauri / Rust
+src-tauri/target
+target
+
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+.pnpm-store/
+.claude/
+
+# Temporary / Scratch Scripts
+patch_*.py
+fix_*.py
+test_*.rs

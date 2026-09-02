@@ -1,0 +1,14 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+  "identifier": "default",
+  "description": "Default permissions for K8SUI desktop window",
+  "windows": [
+    "main",
+    "*"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "shell:allow-open"
+  ]
+}

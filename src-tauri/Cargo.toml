@@ -1,0 +1,58 @@
+[package]
+name = "k8s-ui"
+version = "0.1.0"
+description = "Security-focused desktop Kubernetes administrator"
+authors = ["k8sUI Contributors"]
+license = "Apache-2.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+tauri-plugin-dialog = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+tokio = { version = "1.38", features = ["full"] }
+async-trait = "0.1"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+keyring = "2.3"
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Native Kubernetes API via kube-rs (No kubectl binary execution)
+kube = { version = "0.93", default-features = false, features = ["client", "ws", "runtime", "derive", "rustls-tls"] }
+k8s-openapi = { version = "0.22", default-features = false, features = ["v1_30"] }
+futures = "0.3"
+# Pinned explicitly because both `ring` (via kube's rustls-tls) and `aws-lc-rs`
+# (via the AWS SDK) end up in the graph. rustls 0.23 refuses to guess between two
+# providers and panics on the first TLS handshake, so the process must install one.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+tokio-util = { version = "0.7", features = ["io-util", "codec", "net"] }
+
+# Official Cloud Authentication SDKs
+aws-config = "1.5"
+aws-sdk-sts = "1.34"
+aws-sigv4 = "1.2"
+azure_identity = "0.22"
+azure_core = "0.22"
+
+# Pluggable AI Client
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+flate2 = "1.0"
+sha1 = "0.10"
+tauri-plugin-shell = "2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

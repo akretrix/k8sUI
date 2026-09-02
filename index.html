@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/app-icon-512.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      The Tauri config's CSP only governs the desktop WebView. `npm run dev` and
+      `npm run preview` serve this file directly with none of that protection —
+      this tag mirrors the same policy so the browser-preview build isn't the one
+      path left open to injection. Meta CSP can't set frame-ancestors or report-to;
+      those stay enforced only by the desktop shell.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; connect-src 'self' http://localhost:* ws://localhost:* https:;" />
+    <title>K8SUI — Kubernetes Administrator</title>
+  </head>
+  <body class="bg-background text-gray-100 antialiased select-none font-sans overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

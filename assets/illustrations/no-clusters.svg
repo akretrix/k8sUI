@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300" fill="none">
+  <defs>
+    <linearGradient id="dockGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0B0F17" stop-opacity="0.4" />
+    </linearGradient>
+    <radialGradient id="glowDock" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#326CE5" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#326CE5" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <circle cx="200" cy="150" r="100" fill="url(#glowDock)" />
+
+  <g stroke="#1F2937" stroke-width="1" opacity="0.6">
+    <line x1="80" y1="210" x2="320" y2="210" />
+    <line x1="120" y1="240" x2="280" y2="240" />
+    <line x1="140" y1="120" x2="80" y2="210" />
+    <line x1="260" y1="120" x2="320" y2="210" />
+  </g>
+
+  <polygon points="200,90 280,135 200,180 120,135" fill="url(#dockGrad)" stroke="#326CE5" stroke-width="2" stroke-dasharray="6 4"/>
+  <polygon points="120,135 200,180 200,195 120,150" fill="#0E1726" stroke="#326CE5" stroke-width="1.5" opacity="0.7"/>
+  <polygon points="200,180 280,135 280,150 200,195" fill="#0B0F17" stroke="#326CE5" stroke-width="1.5" opacity="0.7"/>
+
+  <circle cx="200" cy="135" r="22" fill="#111827" stroke="#326CE5" stroke-width="2.5" />
+  <path d="M200,123 V147 M188,135 H212" stroke="#60A5FA" stroke-width="3" stroke-linecap="round" />
+
+  <g stroke="#326CE5" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.5">
+    <circle cx="100" cy="80" r="12" />
+    <circle cx="300" cy="80" r="12" />
+    <circle cx="320" cy="200" r="12" />
+    <circle cx="80" cy="200" r="12" />
+    <line x1="112" y1="85" x2="178" y2="122" />
+    <line x1="288" y1="85" x2="222" y2="122" />
+  </g>
+</svg>

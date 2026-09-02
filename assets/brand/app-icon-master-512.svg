@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <!-- Background Canvas Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#161F30"/>
+      <stop offset="50%" stop-color="#0B0F17"/>
+      <stop offset="100%" stop-color="#06090E"/>
+    </linearGradient>
+
+    <!-- Border Highlight Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#326CE5" stop-opacity="0.6"/>
+      <stop offset="50%" stop-color="#1F2937" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#326CE5" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <!-- Isometric Cube Face Gradients -->
+    <linearGradient id="cubeTop" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4D88FF"/>
+      <stop offset="100%" stop-color="#326CE5"/>
+    </linearGradient>
+
+    <linearGradient id="cubeLeft" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2557C7"/>
+      <stop offset="100%" stop-color="#143175"/>
+    </linearGradient>
+
+    <linearGradient id="cubeRight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1D44A5"/>
+      <stop offset="100%" stop-color="#0E214F"/>
+    </linearGradient>
+
+    <!-- Center Node Radial Glow -->
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#60A5FA"/>
+      <stop offset="40%" stop-color="#326CE5"/>
+      <stop offset="100%" stop-color="#326CE5" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Drop Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="ambientLight" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="48" result="blur"/>
+    </filter>
+  </defs>
+
+  <!-- App Icon Base Squircle (iOS/macOS compliant safe-zone) -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect width="510" height="510" x="1" y="1" rx="111" stroke="url(#borderGrad)" stroke-width="2"/>
+
+  <!-- Subtle Cluster Grid Lines (Background Depth) -->
+  <g stroke="#1F2937" stroke-width="1.5" stroke-dasharray="4 6" opacity="0.4">
+    <line x1="120" y1="120" x2="392" y2="392"/>
+    <line x1="392" y1="120" x2="120" y2="392"/>
+    <line x1="256" y1="80" x2="256" y2="432"/>
+    <line x1="80" y1="256" x2="432" y2="256"/>
+  </g>
+
+  <!-- Ambient Backdrop Glow behind cluster -->
+  <circle cx="256" cy="256" r="110" fill="#326CE5" opacity="0.25" filter="url(#ambientLight)"/>
+
+  <!-- Outer Protective Orbit Ring (Hexagonal Mesh) -->
+  <polygon 
+    points="256,92 398,174 398,338 256,420 114,338 114,174" 
+    stroke="#326CE5" 
+    stroke-opacity="0.35" 
+    stroke-width="3" 
+    stroke-dasharray="12 8"
+    fill="none"
+  />
+
+  <!-- Main Isometric Cluster Node (The Container Core) -->
+  <g filter="url(#glow)">
+    <!-- Top Face -->
+    <polygon 
+      points="256,150 348,203 256,256 164,203" 
+      fill="url(#cubeTop)" 
+      stroke="#60A5FA" 
+      stroke-width="2.5" 
+      stroke-linejoin="round"
+    />
+    <!-- Left Face -->
+    <polygon 
+      points="164,203 256,256 256,362 164,309" 
+      fill="url(#cubeLeft)" 
+      stroke="#326CE5" 
+      stroke-width="2.5" 
+      stroke-linejoin="round"
+    />
+    <!-- Right Face -->
+    <polygon 
+      points="256,256 348,203 348,309 256,362" 
+      fill="url(#cubeRight)" 
+      stroke="#2557C7" 
+      stroke-width="2.5" 
+      stroke-linejoin="round"
+    />
+  </g>
+
+  <!-- Orbital Worker Pods (Surrounding Nodes) -->
+  <circle cx="256" cy="92" r="14" fill="#111827" stroke="#4D88FF" stroke-width="4"/>
+  <circle cx="256" cy="92" r="5" fill="#60A5FA"/>
+
+  <circle cx="114" cy="338" r="14" fill="#111827" stroke="#4D88FF" stroke-width="4"/>
+  <circle cx="114" cy="338" r="5" fill="#60A5FA"/>
+
+  <circle cx="398" cy="338" r="14" fill="#111827" stroke="#4D88FF" stroke-width="4"/>
+  <circle cx="398" cy="338" r="5" fill="#60A5FA"/>
+
+  <!-- Top-Right Active Status Node (Emerald Indicator) -->
+  <circle cx="398" cy="174" r="16" fill="#111827" stroke="#10B981" stroke-width="4"/>
+  <circle cx="398" cy="174" r="7" fill="#34D399" filter="url(#glow)"/>
+
+  <!-- Center Core Glowing Heart Indicator -->
+  <circle cx="256" cy="203" r="16" fill="url(#centerGlow)"/>
+  <circle cx="256" cy="203" r="6" fill="#FFFFFF"/>
+</svg>
