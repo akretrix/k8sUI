@@ -36,8 +36,9 @@ impl AksConnector {
 
     /// Acquire short-lived Azure AD token using official azure_identity credential flow
     pub async fn generate_aad_token(&self) -> Result<String, ConnectorError> {
-        let credential = DefaultAzureCredential::new()
-                .map_err(|e| ConnectorError::AuthError(format!("Failed to create Azure credential chain: {}", e)))?;
+        let credential = DefaultAzureCredential::new().map_err(|e| {
+            ConnectorError::AuthError(format!("Failed to create Azure credential chain: {}", e))
+        })?;
         // Server Application ID for Azure Kubernetes Service AAD Server
         let scopes = &["6dae42f6-4360-4794-a3e0-dd704400e786/.default"];
 

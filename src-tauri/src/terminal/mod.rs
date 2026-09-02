@@ -35,6 +35,7 @@ impl TerminalManager {
     }
 
     /// Spawns a native Kubernetes exec subresource session via kube-rs (SPDY/WebSocket)
+    #[allow(clippy::too_many_arguments)]
     pub async fn spawn_exec(
         &self,
         client: Client,
@@ -140,7 +141,12 @@ impl TerminalManager {
 
         let mut resize_tx = attached.terminal_size();
         if let (Some(tx), Some(w), Some(h)) = (&mut resize_tx, cols, rows) {
-            let _ = tx.send(kube::api::TerminalSize { width: w, height: h }).await;
+            let _ = tx
+                .send(kube::api::TerminalSize {
+                    width: w,
+                    height: h,
+                })
+                .await;
         }
 
         let session = TerminalSession {
@@ -175,16 +181,29 @@ impl TerminalManager {
         }
     }
 
-    pub async fn resize(&self, session_id: &str, cols: u16, rows: u16) -> Result<(), ConnectorError> {
+    pub async fn resize(
+        &self,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), ConnectorError> {
         let mut map = self.sessions.lock().await;
         if let Some(session) = map.get_mut(session_id) {
             if let Some(tx) = &mut session.resize_tx {
                 // In kube-rs 0.93, TerminalSize expects width/height
-                let _ = tx.send(kube::api::TerminalSize { width: cols, height: rows }).await;
+                let _ = tx
+                    .send(kube::api::TerminalSize {
+                        width: cols,
+                        height: rows,
+                    })
+                    .await;
             }
             Ok(())
         } else {
-            Err(ConnectorError::TerminalError(format!("Session {} not found", session_id)))
+            Err(ConnectorError::TerminalError(format!(
+                "Session {} not found",
+                session_id
+            )))
         }
     }
 

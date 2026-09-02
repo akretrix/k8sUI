@@ -1859,6 +1859,7 @@ impl GenericResourceManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn install_helm_release(
         &self,
         release_name: &str,
@@ -1927,6 +1928,7 @@ impl GenericResourceManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn upgrade_helm_release(
         &self,
         release_name: &str,

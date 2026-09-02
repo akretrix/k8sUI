@@ -1226,7 +1226,7 @@ pub async fn get_sso_login_command(profile: Option<String>) -> Result<ApiRespons
 
     tokio::task::spawn_blocking(move || {
         let mut session_cmd = get_aws_cmd();
-        session_cmd.args(&["configure", "get", "sso_session", "--profile", &prof_clone]);
+        session_cmd.args(["configure", "get", "sso_session", "--profile", &prof_clone]);
         let sso_session = session_cmd.output().ok().and_then(|o| {
             if o.status.success() {
                 let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -1261,7 +1261,7 @@ pub async fn open_terminal_sso_login(
 
     tokio::task::spawn_blocking(move || {
         let mut session_cmd = get_aws_cmd();
-        session_cmd.args(&["configure", "get", "sso_session", "--profile", &prof_clone]);
+        session_cmd.args(["configure", "get", "sso_session", "--profile", &prof_clone]);
         let sso_session = session_cmd.output().ok().and_then(|o| {
             if o.status.success() {
                 let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -1658,7 +1658,10 @@ pub async fn terminal_resize(
 }
 
 #[tauri::command]
-pub async fn save_file(path: String, contents: String) -> Result<crate::commands::ApiResponse<()>, String> {
+pub async fn save_file(
+    path: String,
+    contents: String,
+) -> Result<crate::commands::ApiResponse<()>, String> {
     match std::fs::write(&path, contents) {
         Ok(_) => Ok(crate::commands::ApiResponse::ok(())),
         Err(e) => Ok(crate::commands::ApiResponse::err(e.to_string())),
