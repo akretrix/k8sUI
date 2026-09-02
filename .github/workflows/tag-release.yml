@@ -88,7 +88,7 @@ jobs:
         timeout-minutes: 2
         run: |
           NEW_TAG="${{ steps.versioning.outputs.TAG_NAME }}"
-          git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json package-lock.json 2>/dev/null || true
+          git add -u
           git commit -s -m "chore(release): bump version to $NEW_TAG"
           git push origin main
 

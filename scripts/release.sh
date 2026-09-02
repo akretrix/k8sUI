@@ -21,10 +21,10 @@ if [[ -n $(git status --porcelain) ]]; then
 fi
 
 echo "==> Running security checks and build verification..."
-npm run build
+pnpm run build
 
 echo "==> Bumping version ($BUMP_TYPE)..."
-npm version "$BUMP_TYPE" --no-git-tag-version
+pnpm version "$BUMP_TYPE" --no-git-tag-version
 
 NEW_VERSION=$(node -p "require('./package.json').version")
 TAG_NAME="v$NEW_VERSION"
@@ -42,7 +42,7 @@ node -e "
 "
 
 echo "==> Committing with DCO Signed-off-by..."
-git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json package-lock.json 2>/dev/null || true
+git add -u
 git commit -s -m "chore(release): prepare $TAG_NAME"
 
 echo "==> Creating Git tag $TAG_NAME..."
