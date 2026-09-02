@@ -92,6 +92,8 @@ export const LogsModal: React.FC<LogsModalProps> = ({ isOpen, onClose, resource 
         setContainers(names);
         if (names.length === 1) {
           setContainer(names[0]);
+        } else if (!names.includes(container) && container !== 'all') {
+          setContainer('all'); // Reset if the current container doesn't exist in the new pod
         }
       })
       .catch(() => setContainers([]));
@@ -100,6 +102,14 @@ export const LogsModal: React.FC<LogsModalProps> = ({ isOpen, onClose, resource 
       cancelled = true;
     };
   }, [isOpen, namespace, selectedPodName, matchingPods, resourceName]);
+
+  // Reset core state when the target resource changes
+  useEffect(() => {
+    setLogs([]);
+    setError(null);
+    setSearchQuery('');
+    setContainer('all');
+  }, [resource?.name]);
 
   // 3. Fetch logs based on pod and container selection
   const fetchLogs = useCallback(async () => {
