@@ -187,7 +187,7 @@ If your organization uses k8sUI in production and wants to ensure its long-term 
 - Priority issue triage for your use cases
 - Acknowledgment in release notes
 
-Contact us at **sponsors@akretrix.io** to discuss corporate sponsorship tiers.
+Contact us at **admin@akretrix.com** to discuss corporate sponsorship tiers.
 
 > Sponsorship funds are used exclusively for project infrastructure. No funds are used for proprietary development — the project will always remain Apache-2.0 licensed.
 

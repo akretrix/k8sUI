@@ -35,11 +35,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - name: Setup Node & Rust Toolchains
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: 'pnpm'
 
       # Floating on purpose — see the note in ci.yml's rust-security job.
       - uses: dtolnay/rust-toolchain@stable
@@ -49,17 +52,16 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0ffd23969fcce89fd868 # v1.6.3
-        with:
-          command: check
-          arguments: --config deny.toml
+        run: cargo install cargo-deny
+      - name: Run cargo-deny
+        run: cargo deny check
 
       - name: Run Dependency Audit & License Checks
         run: |
-          npm ci
-          npm audit --audit-level=high
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level=high
           npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --summary
-          npm run build
+          pnpm run build
 
       - name: Run Rust Security Linters & Tests
         run: |
@@ -112,11 +114,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file libayatana-appindicator3-dev
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: 'pnpm'
 
       # Floating on purpose — see the note in ci.yml's rust-security job.
       - name: Setup Rust Toolchain
@@ -127,7 +132,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Install Frontend Dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       # Build Multiplatform Tauri Bundles
       - name: Build Tauri Desktop Application
@@ -169,10 +174,13 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - name: Setup Node & Rust for SBOM
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 22
 
       # Floating on purpose — see the note in ci.yml's rust-security job.
       - uses: dtolnay/rust-toolchain@stable
@@ -193,8 +201,8 @@ jobs:
           cargo cyclonedx --manifest-path src-tauri/Cargo.toml --output-format json -f sbom/rust-bom.cdx.json
           
           # Generate Frontend Node SBOM
-          npm ci
-          npx @cyclonedx/cyclonedx-npm --output-file sbom/frontend-bom.cdx.json
+          pnpm install --frozen-lockfile
+          pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom/frontend-bom.cdx.json
 
       - name: Generate SHA256 Checksums
         run: |

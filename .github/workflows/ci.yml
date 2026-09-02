@@ -47,9 +47,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          wget https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz
+          tar -xzf gitleaks_8.18.2_linux_x64.tar.gz
+          ./gitleaks detect --source . -v
 
   # 3. Rust SAST, Auditing & License Verification
   rust-security:
@@ -68,10 +69,9 @@ jobs:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0ffd23969fcce89fd868 # v1.6.3
-        with:
-          command: check
-          arguments: --config deny.toml
+        run: cargo install cargo-deny
+      - name: Run cargo-deny
+        run: cargo deny check
       - name: Cargo fmt check
         run: cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
       - name: Cargo clippy SAST (Zero Warnings)
@@ -85,18 +85,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22
+          cache: 'pnpm'
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: License check (Apache-2.0, MIT, BSD, ISC only)
         run: npx license-checker --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;0BSD;Unlicense" --production --summary
       - name: Run Unit & Functional Tests
-        run: npm test
+        run: pnpm test
       - name: Verify Production Build
-        run: npm run build
+        run: pnpm run build
 
   # 5. Multi-Ecosystem Vulnerability Scan (Aqua Trivy)
   trivy-scan:
@@ -104,6 +107,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read
       security-events: write # Required for SARIF upload to GitHub Security tab
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -140,7 +144,7 @@ jobs:
           cargo cyclonedx --manifest-path src-tauri/Cargo.toml --output-format json -f rust-sbom.cdx.json
       - name: Generate Frontend SBOM (CycloneDX)
         run: |
-          npx @cyclonedx/cyclonedx-npm --output-file frontend-sbom.cdx.json
+          pnpm dlx @cyclonedx/cyclonedx-npm --output-file frontend-sbom.cdx.json
       - name: Sign SBOM with Cosign Keyless OIDC
         run: |
           echo "Signing SBOM artifacts using Sigstore OIDC..."
