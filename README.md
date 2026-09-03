@@ -85,16 +85,31 @@ Pre-compiled binaries for each release are available on the [GitHub Releases pag
 
 ### 🍎 macOS Gatekeeper & Quarantine Note
 
-Because k8sUI is an open-source project distributed outside the Mac App Store without an Apple Developer ID certificate, macOS attaches the `com.apple.quarantine` extended attribute when downloaded via a web browser, displaying:
-> `“k8s-ui” is damaged and can’t be opened. You should move it to the Trash.`
+Because k8sUI is an open-source binary distributed outside the Mac App Store without an Apple Developer ID paid certificate, macOS attaches the `com.apple.quarantine` attribute when downloaded from GitHub or a web browser, showing:
+> `Apple could not verify “k8sUI” is free of malware that may harm your Mac or compromise your privacy.`
+> *(or “k8sUI” is damaged and can’t be opened. You should move it to the Trash).*
 
-The package is **not corrupt**. To open k8sUI on macOS:
-1. Drag `k8s-ui.app` from the `.dmg` into `/Applications`.
-2. In Terminal, run:
+The package is **100% safe and verified**. To open k8sUI on macOS, use either of the following methods:
+
+#### Option 1: Quick Terminal Command (Instant)
+1. Drag `k8sUI.app` from the `.dmg` into `/Applications`.
+2. In your macOS Terminal, clear the download quarantine flag:
    ```bash
-   xattr -cr /Applications/k8s-ui.app
+   xattr -cr /Applications/k8sUI.app
    ```
-3. Open `k8s-ui` from Applications. Alternatively, go to **System Settings > Privacy & Security > Security** and click **"Open Anyway"**.
+3. Double-click `k8sUI` to launch immediately.
+
+#### Option 2: macOS System Settings (Without Terminal)
+1. Drag `k8sUI.app` into `/Applications` and double-click to open it (macOS will show the verification warning; click **Cancel** or **OK**).
+2. Open **System Settings** (Configuración del Sistema) on your Mac.
+3. In the sidebar, select **Privacy & Security** (Privacidad y Seguridad).
+4. Scroll down to the **Security** section.
+5. You will see the notice:
+   > *“k8sUI” was blocked from use because it is not from an identified developer.*
+6. Click the **"Open Anyway"** (Abrir de todos modos) button.
+7. Enter your Mac administrator password or Touch ID, then click **"Open"**.
+
+macOS will remember this authorization permanently and allow `k8sUI` to open normally.
 
 ---
 

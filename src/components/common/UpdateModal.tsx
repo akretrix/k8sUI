@@ -108,12 +108,21 @@ export const UpdateModal: React.FC<UpdateModalProps> = ({
               {platform === 'macos' && (
                 <div className="p-3 rounded-lg bg-blue-950/30 border border-blue-500/20 flex items-start space-x-2.5">
                   <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                  <div className="text-[11px] text-blue-200/90 leading-normal">
-                    <strong>macOS Gatekeeper tip:</strong> If macOS shows a warning for open-source apps, run{' '}
-                    <code className="bg-black/50 px-1 py-0.5 rounded text-cyan-300 font-mono">
-                      xattr -cr /Applications/k8sUI.app
-                    </code>{' '}
-                    in Terminal to clear the download quarantine flag.
+                  <div className="text-[11px] text-blue-200/90 leading-normal space-y-1">
+                    <div>
+                      <strong>macOS Gatekeeper verification:</strong> If macOS blocks the app, you can open it via:
+                    </div>
+                    <div>
+                      <strong>Option 1 (Terminal):</strong> Run{' '}
+                      <code className="bg-black/50 px-1 py-0.5 rounded text-cyan-300 font-mono">
+                        xattr -cr /Applications/k8sUI.app
+                      </code>
+                    </div>
+                    <div>
+                      <strong>Option 2 (Settings):</strong> Go to{' '}
+                      <span className="text-gray-200 font-medium">System Settings &gt; Privacy &amp; Security &gt; Security</span> and click{' '}
+                      <span className="text-cyan-300 font-semibold">"Open Anyway"</span>.
+                    </div>
                   </div>
                 </div>
               )}

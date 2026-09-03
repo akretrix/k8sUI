@@ -242,11 +242,14 @@ jobs:
           mkdir -p sbom
           # Generate Rust SBOM
           cargo install cargo-cyclonedx
-          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --output-format json -f sbom/rust-bom.cdx.json
+          cargo cyclonedx --manifest-path src-tauri/Cargo.toml --format json
+          find src-tauri -maxdepth 1 -name "*.cdx.json" -exec cp {} sbom/rust-bom.cdx.json \; || cp src-tauri/bom.json sbom/rust-bom.cdx.json
+          test -s sbom/rust-bom.cdx.json
           
           # Generate Frontend Node SBOM
           pnpm install --frozen-lockfile
           pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom/frontend-bom.cdx.json
+          test -s sbom/frontend-bom.cdx.json
 
       - name: Generate SHA256 Checksums
         timeout-minutes: 2
