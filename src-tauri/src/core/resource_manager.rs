@@ -356,11 +356,11 @@ impl GenericResourceManager {
         let (resource, caps) = self.resolve_api_resource("customresourcedefinitions")?;
         let api = self.get_api(&resource, &caps, None);
         let crds = tokio::time::timeout(
-            std::time::Duration::from_secs(8),
+            std::time::Duration::from_secs(18),
             api.list(&ListParams::default()),
         )
         .await
-        .map_err(|_| ConnectorError::Timeout("Listing CRD types timed out after 8s".to_string()))?
+        .map_err(|_| ConnectorError::Timeout("Listing CRD types timed out after 18s".to_string()))?
         .map_err(ConnectorError::KubeError)?;
 
         let mut discovered_crds = std::collections::HashMap::new();
@@ -588,7 +588,7 @@ impl GenericResourceManager {
             // 1. Try cluster-wide list first
             let all_api = Api::all_with(self.client.clone(), &resource);
             let cluster_res = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
+                std::time::Duration::from_secs(20),
                 all_api.list(&ListParams::default()),
             )
             .await;
@@ -627,12 +627,15 @@ impl GenericResourceManager {
                         discovered_ns
                     };
 
+                    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
                     let mut tasks = Vec::new();
                     for ns in ns_list {
                         let ns_api = Api::namespaced_with(self.client.clone(), &ns, &resource);
+                        let sem_clone = sem.clone();
                         tasks.push(async move {
+                            let _permit = sem_clone.acquire().await.ok();
                             tokio::time::timeout(
-                                std::time::Duration::from_secs(4),
+                                std::time::Duration::from_secs(12),
                                 ns_api.list(&ListParams::default()),
                             )
                             .await
@@ -648,7 +651,7 @@ impl GenericResourceManager {
                 }
                 Err(_) => {
                     return Err(ConnectorError::Timeout(format!(
-                        "Cluster-wide listing for '{}' timed out after 5s. Please check your cluster connection or VPN.",
+                        "Cluster-wide listing for '{}' timed out after 20s. Please check your cluster connection or VPN.",
                         kind
                     )));
                 }
@@ -656,7 +659,7 @@ impl GenericResourceManager {
         } else {
             let api = self.get_api(&resource, &caps, namespace);
             let list_res = tokio::time::timeout(
-                std::time::Duration::from_secs(6),
+                std::time::Duration::from_secs(20),
                 api.list(&ListParams::default()),
             )
             .await;
@@ -689,7 +692,7 @@ impl GenericResourceManager {
                 }
                 Err(_) => {
                     return Err(ConnectorError::Timeout(format!(
-                        "Listing '{}' timed out after 6s. Please check your cluster connection or VPN.",
+                        "Listing '{}' timed out after 20s. Please check your cluster connection or VPN.",
                         kind
                     )));
                 }
@@ -1285,9 +1288,27 @@ impl GenericResourceManager {
                             .get("message")
                             .and_then(|m| m.as_str())
                             .unwrap_or("-");
+                        let count = item.data.get("count").and_then(|v| v.as_i64()).unwrap_or(1);
+                        let source = item
+                            .data
+                            .get("source")
+                            .and_then(|s| s.get("component"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-");
+
+                        let io = item.data.get("involvedObject");
+                        let io_kind = io.and_then(|o| o.get("kind")).and_then(|v| v.as_str()).unwrap_or("-");
+                        let io_name = io.and_then(|o| o.get("name")).and_then(|v| v.as_str()).unwrap_or("-");
+
                         obj["eventType"] = json!(event_type);
+                        obj["type"] = json!(event_type);
                         obj["reason"] = json!(reason);
                         obj["message"] = json!(message);
+                        obj["count"] = json!(count);
+                        obj["source"] = json!(source);
+                        obj["involvedObject"] = json!(format!("{}/{}", io_kind, io_name));
+                        obj["involvedObjectKind"] = json!(io_kind);
+                        obj["involvedObjectName"] = json!(io_name);
                     }
                     "ValidatingWebhookConfiguration" | "MutatingWebhookConfiguration" => {
                         let webhooks = item.data.get("webhooks").and_then(|w| w.as_array());
@@ -1457,6 +1478,118 @@ impl GenericResourceManager {
         Ok(yaml)
     }
 
+    pub async fn get_resource_events(
+        &self,
+        kind: &str,
+        name: &str,
+        namespace: Option<&str>,
+    ) -> Result<Vec<serde_json::Value>, ConnectorError> {
+        let (resource, caps) = self.resolve_api_resource("events")?;
+        let api = self.get_api(&resource, &caps, namespace);
+
+        let lp = ListParams::default();
+        let list_res = tokio::time::timeout(std::time::Duration::from_secs(10), api.list(&lp)).await;
+        let items = match list_res {
+            Ok(Ok(list)) => list.items,
+            Ok(Err(e)) => return Err(ConnectorError::KubeError(e)),
+            Err(_) => return Err(ConnectorError::Timeout("Querying events timed out".into())),
+        };
+
+        let target_name = name.to_lowercase();
+        let target_kind = kind.to_lowercase();
+        let prefix = format!("{}-", target_name);
+        let is_workload = matches!(
+            target_kind.as_str(),
+            "deployment"
+                | "deployments"
+                | "statefulset"
+                | "statefulsets"
+                | "daemonset"
+                | "daemonsets"
+                | "job"
+                | "jobs"
+        );
+
+        let mut events: Vec<serde_json::Value> = items
+            .into_iter()
+            .filter_map(|item| {
+                let io = item.data.get("involvedObject")?;
+                let io_name = io.get("name").and_then(|v| v.as_str())?.to_lowercase();
+
+                let matches_direct = io_name == target_name;
+                let matches_child = is_workload && io_name.starts_with(&prefix);
+
+                if !matches_direct && !matches_child {
+                    return None;
+                }
+
+                let event_type = item.data.get("type").and_then(|t| t.as_str()).unwrap_or("Normal");
+                let reason = item.data.get("reason").and_then(|r| r.as_str()).unwrap_or("-");
+                let message = item.data.get("message").and_then(|m| m.as_str()).unwrap_or("-");
+                let count = item.data.get("count").and_then(|v| v.as_i64()).unwrap_or(1);
+                let source = item.data.get("source").and_then(|s| s.get("component")).and_then(|v| v.as_str()).unwrap_or("-");
+                let first_ts = item.data.get("firstTimestamp").and_then(|v| v.as_str()).unwrap_or("");
+                let last_ts = item.data.get("lastTimestamp").and_then(|v| v.as_str()).unwrap_or("");
+                let creation = item.creation_timestamp().map(|t| t.0.to_rfc3339()).unwrap_or_default();
+                let age = if let Some(ts) = item.creation_timestamp() {
+                    let dur = chrono::Utc::now().signed_duration_since(ts.0);
+                    if dur.num_days() > 0 {
+                        format!("{}d", dur.num_days())
+                    } else if dur.num_hours() > 0 {
+                        format!("{}h", dur.num_hours())
+                    } else if dur.num_minutes() > 0 {
+                        format!("{}m", dur.num_minutes())
+                    } else {
+                        format!("{}s", dur.num_seconds())
+                    }
+                } else {
+                    String::new()
+                };
+
+                let io_field_path = io.get("fieldPath").and_then(|v| v.as_str()).unwrap_or("");
+
+                Some(json!({
+                    "name": item.name_any(),
+                    "namespace": item.namespace().unwrap_or_default(),
+                    "type": event_type,
+                    "eventType": event_type,
+                    "reason": reason,
+                    "message": message,
+                    "count": count,
+                    "source": source,
+                    "firstTimestamp": first_ts,
+                    "lastTimestamp": last_ts,
+                    "creationTimestamp": creation,
+                    "age": age,
+                    "involvedObject": {
+                        "kind": io.get("kind").and_then(|v| v.as_str()).unwrap_or(""),
+                        "name": io.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        "namespace": io.get("namespace").and_then(|v| v.as_str()).unwrap_or(""),
+                        "fieldPath": io_field_path
+                    }
+                }))
+            })
+            .collect();
+
+        events.sort_by(|a, b| {
+            let ts_a = a
+                .get("lastTimestamp")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| a.get("creationTimestamp").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            let ts_b = b
+                .get("lastTimestamp")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .or_else(|| b.get("creationTimestamp").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            ts_b.cmp(ts_a)
+        });
+
+        Ok(events)
+    }
+
     pub async fn get_resource_yaml(
         &self,
         kind: &str,
@@ -1511,10 +1644,10 @@ impl GenericResourceManager {
 
         let (resource, caps) = self.resolve_api_resource(kind)?;
         let api = self.get_api(&resource, &caps, namespace);
-        let mut obj = tokio::time::timeout(std::time::Duration::from_secs(8), api.get(name))
+        let mut obj = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
             .await
             .map_err(|_| {
-                ConnectorError::Timeout(format!("Fetching {kind}/{name} timed out after 8s"))
+                ConnectorError::Timeout(format!("Fetching {kind}/{name} timed out after 20s"))
             })?
             .map_err(ConnectorError::KubeError)?;
 
@@ -1546,9 +1679,9 @@ impl GenericResourceManager {
         let ns = namespace.unwrap_or("default");
         let api: Api<k8s_openapi::api::core::v1::Secret> = Api::namespaced(self.client.clone(), ns);
 
-        let secret = tokio::time::timeout(std::time::Duration::from_secs(8), api.get(name))
+        let secret = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
             .await
-            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out")))?
+            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s")))?
             .map_err(ConnectorError::KubeError)?;
 
         let secret_type = secret.type_.unwrap_or_else(|| "Opaque".to_string());
@@ -1604,9 +1737,9 @@ impl GenericResourceManager {
         let ns = namespace.unwrap_or("default");
         let api: Api<k8s_openapi::api::core::v1::Secret> = Api::namespaced(self.client.clone(), ns);
 
-        let mut secret = tokio::time::timeout(std::time::Duration::from_secs(8), api.get(name))
+        let mut secret = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
             .await
-            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out")))?
+            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s")))?
             .map_err(ConnectorError::KubeError)?;
 
         if is_plaintext {
@@ -2218,12 +2351,12 @@ impl GenericResourceManager {
         let lp_pods = ListParams::default();
         let lp_metrics = ListParams::default();
         let (pods_res, metrics_res) = tokio::join!(
-            tokio::time::timeout(std::time::Duration::from_secs(6), api.list(&lp_pods),),
+            tokio::time::timeout(std::time::Duration::from_secs(20), api.list(&lp_pods),),
             async {
                 if let Ok((res, caps)) = self.resolve_api_resource("podmetrics") {
                     let metrics_api = self.get_api(&res, &caps, namespace);
                     tokio::time::timeout(
-                        std::time::Duration::from_secs(3),
+                        std::time::Duration::from_secs(6),
                         metrics_api.list(&lp_metrics),
                     )
                     .await
@@ -2236,7 +2369,7 @@ impl GenericResourceManager {
         );
 
         let pods = pods_res
-            .map_err(|_| ConnectorError::Timeout("Listing pods timed out after 6s".to_string()))?
+            .map_err(|_| ConnectorError::Timeout("Listing pods timed out after 20s".to_string()))?
             .map_err(ConnectorError::KubeError)?;
 
         let pod_metrics_map: std::collections::HashMap<(String, String), (String, String)> =
@@ -2630,9 +2763,9 @@ impl GenericResourceManager {
             jobs_res,
             events_res,
         ) = tokio::join!(
-            tokio::time::timeout(std::time::Duration::from_secs(5), node_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), pod_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            tokio::time::timeout(std::time::Duration::from_secs(15), node_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), pod_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(6), async {
                 if let Ok(api) = node_metrics_api {
                     let lp_m = ListParams::default();
                     api.list(&lp_m).await.ok().map(|l| l.items)
@@ -2640,12 +2773,12 @@ impl GenericResourceManager {
                     None
                 }
             }),
-            tokio::time::timeout(std::time::Duration::from_secs(5), dep_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), sts_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), ds_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), cj_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), job_api.list(&lp)),
-            tokio::time::timeout(std::time::Duration::from_secs(5), event_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), dep_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), sts_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), ds_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), cj_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), job_api.list(&lp)),
+            tokio::time::timeout(std::time::Duration::from_secs(15), event_api.list(&lp)),
         );
 
         // If essential queries timed out or failed with auth errors, fail immediately instead of showing 0

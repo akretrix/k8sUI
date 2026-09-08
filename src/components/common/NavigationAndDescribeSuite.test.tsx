@@ -4,7 +4,7 @@ import { DescribeModal } from './DescribeModal';
 import { GenericResourceTable } from './GenericResourceTable';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const { samplePodYaml } = vi.hoisted(() => {
+const { samplePodYaml, sampleDeploymentYaml, sampleEvents } = vi.hoisted(() => {
   return {
     samplePodYaml: `
 apiVersion: v1
@@ -102,14 +102,108 @@ status:
       status: "True"
     - type: ContainersReady
       status: "True"
-`
+`,
+    sampleDeploymentYaml: `
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+  namespace: qa-acme
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.25
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+status:
+  replicas: 3
+  readyReplicas: 3
+  updatedReplicas: 3
+  availableReplicas: 3
+`,
+    sampleEvents: [
+      {
+        uid: 'evt-1',
+        type: 'Warning',
+        reason: 'BackOff',
+        involvedObject: { kind: 'Pod', name: 'qa-ia-evaluacion-29799120-hqmns' },
+        message: 'Back-off restarting failed container envoy-sidecar',
+        source: 'kubelet',
+        count: 3,
+        lastTimestamp: '2026-08-28T10:10:00Z',
+      },
+      {
+        uid: 'evt-2',
+        type: 'Normal',
+        reason: 'Scheduled',
+        involvedObject: { kind: 'Pod', name: 'qa-ia-evaluacion-29799120-hqmns' },
+        message: 'Successfully assigned default/qa-ia-evaluacion to ip-10-0-12-45',
+        source: 'default-scheduler',
+        count: 1,
+        lastTimestamp: '2026-08-28T09:59:00Z',
+      },
+    ],
   };
 });
 
 // Mock Tauri API client describeResource and listResources
 vi.mock('../../api/tauriClient', () => ({
   api: {
-    describeResource: vi.fn().mockResolvedValue(samplePodYaml),
+    describeResource: vi.fn().mockImplementation((kind?: string, name?: string) => {
+      const k = (kind || '').toLowerCase();
+      if (k === 'deployment' || k === 'deployments') {
+        return Promise.resolve(sampleDeploymentYaml);
+      }
+      if (k === 'service' || k === 'services') {
+        return Promise.resolve(`apiVersion: v1
+kind: Service
+metadata:
+  name: ${name || 'test-service'}
+  namespace: monitoring
+spec:
+  type: ClusterIP
+  clusterIP: 10.96.0.45
+  selector:
+    app.kubernetes.io/name: opentelemetry-collector
+    app.kubernetes.io/instance: otel-collector
+  ports:
+    - name: grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+`);
+      }
+      if (k === 'endpoints') {
+        return Promise.resolve(`apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ${name || 'test-endpoints'}
+  namespace: monitoring
+subsets:
+  - addresses:
+      - ip: 10.244.1.45
+        nodeName: worker-node-1
+        targetRef:
+          kind: Pod
+          name: otel-collector-opentelemetry-collector-9wbl7
+          namespace: monitoring
+    ports:
+      - name: grpc
+        port: 4317
+        protocol: TCP
+`);
+      }
+      return Promise.resolve(samplePodYaml);
+    }),
+    getResourceEvents: vi.fn().mockImplementation(() => Promise.resolve(sampleEvents)),
     getSecretData: vi.fn().mockResolvedValue({
       name: 'tls-secret',
       namespace: 'qa-acme',
@@ -306,6 +400,33 @@ describe('Comprehensive Functional Navigation & Describe Inspector Suite', () =>
     expect(screen.queryByText('Attached Volumes (0)')).not.toBeInTheDocument();
   });
 
+  it('renders Service overview with target selector, port mappings, and connected endpoints', async () => {
+    const handleClose = vi.fn();
+    render(
+      <DescribeModal
+        isOpen={true}
+        onClose={handleClose}
+        resource={{ kind: 'Service', name: 'otel-collector-opentelemetry-collector', namespace: 'monitoring' }}
+      />
+    );
+
+    // Target selector header and labels
+    expect(await screen.findByText(/Target Pod Selector/i)).toBeInTheDocument();
+    expect(await screen.findByText('app.kubernetes.io/name')).toBeInTheDocument();
+    expect(await screen.findByText('opentelemetry-collector')).toBeInTheDocument();
+
+    // Port mappings
+    expect(await screen.findByText(/Exposed Ports & Protocol Mappings/i)).toBeInTheDocument();
+    expect(screen.getByText('grpc')).toBeInTheDocument();
+    expect(screen.getAllByText('4317').length).toBeGreaterThanOrEqual(1);
+
+    // Connected endpoints & target pods
+    expect(await screen.findByText(/Connected Target Pods & Endpoints/i)).toBeInTheDocument();
+    expect(await screen.findByText('otel-collector-opentelemetry-collector-9wbl7')).toBeInTheDocument();
+    expect(screen.getByText('10.244.1.45')).toBeInTheDocument();
+    expect(screen.getByText('worker-node-1')).toBeInTheDocument();
+  });
+
   it('maintains strict hook order consistency across closed and open states without throwing', async () => {
     const handleClose = vi.fn();
     const { rerender } = render(
@@ -475,6 +596,105 @@ describe('Comprehensive Functional Navigation & Describe Inspector Suite', () =>
     });
 
     expect(await screen.findByText('test-pod')).toBeInTheDocument();
+  });
+
+  it('calculates and displays dynamic Kubernetes resource limits, requests, QoS class, and scaled footprint for Deployments', async () => {
+    const deploymentResource = {
+      kind: 'Deployment',
+      name: 'test-deployment',
+      namespace: 'qa-acme',
+    };
+
+    render(
+      <DescribeModal
+        isOpen={true}
+        resource={deploymentResource}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Verify Deployment name and QoS badge
+    expect(await screen.findByText('test-deployment')).toBeInTheDocument();
+
+    // Verify Pod allocation cards on Overview tab
+    expect(screen.getByText('Pod Allocation')).toBeInTheDocument();
+    expect(screen.getAllByText(/250m/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1.0 cores/).length).toBeGreaterThan(0);
+
+    // Verify Scaled Cluster Footprint (3 replicas * 250m = 750m, 3 * 1000m = 3.0 cores)
+    expect(screen.getByText('Cluster Footprint')).toBeInTheDocument();
+    expect(screen.getByText(/750m/)).toBeInTheDocument();
+    expect(screen.getByText(/3.0 cores/)).toBeInTheDocument();
+
+    // Switch to Metrics Tab and verify dynamic limits
+    const metricsTab = screen.getByRole('button', { name: /Metrics/i });
+    fireEvent.click(metricsTab);
+
+    // Verify Scaled CPU and Scaled Mem cards in Metrics
+    expect(screen.getByText(/Scaled CPU \(3 pods\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Scaled Mem \(3 pods\)/i)).toBeInTheDocument();
+  });
+
+  it('fetches and renders Kubernetes Events tab with severity filtering and search', async () => {
+    const podResource = {
+      kind: 'Pod',
+      name: 'qa-ia-evaluacion-29799120-hqmns',
+      namespace: 'qa-acme',
+    };
+
+    render(
+      <DescribeModal
+        isOpen={true}
+        resource={podResource}
+        onClose={vi.fn()}
+      />
+    );
+
+    // Verify resource loaded
+    expect(await screen.findByText('qa-ia-evaluacion-29799120-hqmns')).toBeInTheDocument();
+
+    // Check that Events tab header button exists and shows warning badge
+    const eventsTab = screen.getByRole('button', { name: /^Events \(/i });
+    expect(eventsTab).toBeInTheDocument();
+
+    // Check Overview tab contains recent lifecycle banner
+    expect(await screen.findByText(/Back-off restarting failed container envoy-sidecar/i)).toBeInTheDocument();
+
+    // Click to open Events tab
+    fireEvent.click(eventsTab);
+
+    // Verify both events render
+    expect(await screen.findByText('BackOff')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.getByText('kubelet')).toBeInTheDocument();
+    expect(screen.getByText('default-scheduler')).toBeInTheDocument();
+
+    // Filter by 'Warnings (1)'
+    const warningsBtn = screen.getByRole('button', { name: /Warnings \(1\)/i });
+    fireEvent.click(warningsBtn);
+
+    expect(screen.getByText('BackOff')).toBeInTheDocument();
+    expect(screen.queryByText('Scheduled')).not.toBeInTheDocument();
+
+    // Filter by 'Normal (1)'
+    const normalBtn = screen.getByRole('button', { name: /Normal \(1\)/i });
+    fireEvent.click(normalBtn);
+
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.queryByText('BackOff')).not.toBeInTheDocument();
+
+    // Reset to 'All (2)'
+    const allBtn = screen.getByRole('button', { name: /All \(2\)/i });
+    fireEvent.click(allBtn);
+    expect(screen.getByText('BackOff')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+
+    // Test text search filter
+    const searchInput = screen.getByPlaceholderText(/Filter events by reason, message, source, or involved object/i);
+    fireEvent.change(searchInput, { target: { value: 'envoy-sidecar' } });
+
+    expect(screen.getByText('BackOff')).toBeInTheDocument();
+    expect(screen.queryByText('Scheduled')).not.toBeInTheDocument();
   });
 });
 

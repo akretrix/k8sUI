@@ -2,7 +2,7 @@ import React from 'react';
 import { ClusterSwitcher } from '../cluster/ClusterSwitcher';
 import { ReadOnlyToggle } from '../cluster/ReadOnlyToggle';
 import { ClusterContextSummary, ClusterHealthInfo, ActivePortForward } from '../../types/cluster';
-import { Bot, Search, SlidersHorizontal, Shield, Palette, Sparkles } from 'lucide-react';
+import { Bot, Search, SlidersHorizontal, Shield, Palette, Sparkles, Activity } from 'lucide-react';
 import { LogoLockup } from '../../assets/brand/LogoLockup';
 import { PortForwardGlobalWidget } from '../portforward/PortForwardGlobalWidget';
 
@@ -23,6 +23,7 @@ interface HeaderProps {
   onToggleAdvancedMode: () => void;
   onOpenCommandPalette: () => void;
   onOpenAuditLog: () => void;
+  onOpenDiagnostics?: () => void;
   onToggleAiDrawer: () => void;
   onOpenAddAwsOrg: () => void;
   onOpenDesignSystem?: () => void;
@@ -48,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleAdvancedMode,
   onOpenCommandPalette,
   onOpenAuditLog,
+  onOpenDiagnostics,
   onToggleAiDrawer,
   onOpenAddAwsOrg,
   onOpenDesignSystem,
@@ -142,6 +144,16 @@ export const Header: React.FC<HeaderProps> = ({
           <SlidersHorizontal className="w-4 h-4" />
           <span className="text-[11px] hidden lg:inline-block">Advanced</span>
         </button>
+
+        {onOpenDiagnostics && (
+          <button
+            onClick={onOpenDiagnostics}
+            className="p-2 rounded-md border border-border text-gray-400 hover:text-indigo-300 hover:bg-surface-elevated transition-colors"
+            title="Diagnostics & IPC Query Monitor (Cmd+Shift+D)"
+          >
+            <Activity className="w-4 h-4" />
+          </button>
+        )}
 
         <button
           onClick={onOpenAuditLog}

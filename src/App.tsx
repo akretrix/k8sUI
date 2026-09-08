@@ -29,10 +29,12 @@ import { ZoomHud } from './components/common/ZoomHud';
 import { useZoom } from './hooks/useZoom';
 import { checkForAppUpdates, UpdateInfo } from './utils/updateChecker';
 import { UpdateModal } from './components/common/UpdateModal';
+import { DiagnosticsModal } from './components/common/DiagnosticsModal';
 import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
   const { zoomLevel, showIndicator: showZoomIndicator, resetZoom } = useZoom();
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
 
   // Tabs State
   const [tabs, setTabs] = useState<AppTab[]>([
@@ -88,21 +90,29 @@ export const App: React.FC = () => {
     handleCheckForUpdates(false);
   }, []);
 
-  // Listen for native macOS app menu "Check for Updates..." trigger
+  // Listen for native macOS app menu triggers
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenUpdates: (() => void) | undefined;
+    let unlistenDiag: (() => void) | undefined;
     if (isTauri) {
       import('@tauri-apps/api/event').then(({ listen }) => {
         listen('trigger-check-updates', () => {
           setIsUpdateModalOpen(true);
           handleCheckForUpdates(true);
         }).then((fn) => {
-          unlisten = fn;
+          unlistenUpdates = fn;
+        });
+
+        listen('trigger-open-diagnostics', () => {
+          setIsDiagnosticsOpen(true);
+        }).then((fn) => {
+          unlistenDiag = fn;
         });
       });
     }
     return () => {
-      if (unlisten) unlisten();
+      if (unlistenUpdates) unlistenUpdates();
+      if (unlistenDiag) unlistenDiag();
     };
   }, []);
 
@@ -118,6 +128,29 @@ export const App: React.FC = () => {
         setIsPanelOpen(false);
       } else if (activePanelTabId === tabId) {
         setActivePanelTabId(newTabs[0].id);
+      }
+      return newTabs;
+    });
+  };
+
+  const handleCloseAllPanelTabs = () => {
+    setPanelTabs([]);
+    setIsPanelOpen(false);
+    setActivePanelTabId('');
+  };
+
+  const handleCloseOtherPanelTabs = (tabId: string) => {
+    setPanelTabs(prev => prev.filter(t => t.id === tabId));
+    setActivePanelTabId(tabId);
+  };
+
+  const handleClosePanelTabsToRight = (tabId: string) => {
+    setPanelTabs(prev => {
+      const idx = prev.findIndex(t => t.id === tabId);
+      if (idx === -1) return prev;
+      const newTabs = prev.slice(0, idx + 1);
+      if (!newTabs.some(t => t.id === activePanelTabId)) {
+        setActivePanelTabId(tabId);
       }
       return newTabs;
     });
@@ -189,6 +222,7 @@ export const App: React.FC = () => {
 
   // Tab Handlers
   const handleSelectResource = (resourceId: string, inNewTab?: boolean) => {
+    setSelectedResourceForDescribe(null);
     if (inNewTab) {
       const newTab: AppTab = {
         id: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -202,6 +236,15 @@ export const App: React.FC = () => {
       };
       setTabs((prev) => [...prev, newTab]);
       setActiveTabId(newTab.id);
+      return;
+    }
+
+    // If a tab for this resource already exists, switch to it!
+    const existingTab = tabs.find(
+      (t) => t.resource === resourceId && (!t.clusterId || t.clusterId === activeCluster?.id)
+    );
+    if (existingTab) {
+      setActiveTabId(existingTab.id);
       return;
     }
 
@@ -220,6 +263,7 @@ export const App: React.FC = () => {
   };
 
   const handleSelectTab = (tabId: string) => {
+    setSelectedResourceForDescribe(null);
     setActiveTabId(tabId);
     const target = tabs.find((t) => t.id === tabId);
     if (target && target.clusterId && target.clusterId !== activeCluster?.id) {
@@ -313,6 +357,18 @@ export const App: React.FC = () => {
       setTabs([target]);
       handleSelectTab(target.id);
     }
+  };
+
+  const handleCloseTabsToRight = (tabId: string) => {
+    setTabs((prev) => {
+      const idx = prev.findIndex((t) => t.id === tabId);
+      if (idx === -1) return prev;
+      const newTabs = prev.slice(0, idx + 1);
+      if (!newTabs.some((t) => t.id === activeTabId)) {
+        setActiveTabId(tabId);
+      }
+      return newTabs;
+    });
   };
 
   const handleNewTab = () => {
@@ -424,6 +480,13 @@ export const App: React.FC = () => {
       const targetTag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       const isInput = targetTag === 'input' || targetTag === 'textarea';
 
+      // Cmd+Shift+D or Ctrl+Shift+D -> Open Diagnostics Modal
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setIsDiagnosticsOpen((prev) => !prev);
+        return;
+      }
+
       // Cmd+T or Ctrl+T -> Open New Tab Modal
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 't' && !e.shiftKey) {
         e.preventDefault();
@@ -475,7 +538,8 @@ export const App: React.FC = () => {
     // Kubernetes' list API has no "these N namespaces" query of its own.
     queryFn: () => api.listPods(selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined),
     enabled: !!activeCluster && activeResource === 'pods',
-    refetchInterval: activeResource === 'pods' ? 5000 : false,
+    staleTime: 15_000,
+    refetchInterval: activeResource === 'pods' ? 8000 : false,
   });
 
   const { data: auditLogs = [], refetch: refetchAuditLogs } = useQuery({
@@ -814,6 +878,7 @@ export const App: React.FC = () => {
         onToggleAdvancedMode={() => setIsAdvancedMode(!isAdvancedMode)}
         onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         onOpenAuditLog={() => setIsAuditModalOpen(true)}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
         onToggleAiDrawer={() => setIsAiDrawerOpen(!isAiDrawerOpen)}
         onOpenAddAwsOrg={() => setIsAddAwsOrgOpen(true)}
         onOpenDesignSystem={() => setIsDesignSystemOpen(true)}
@@ -842,6 +907,7 @@ export const App: React.FC = () => {
             onCloseTab={handleCloseTab}
             onCloseAllTabs={handleCloseAllTabs}
             onCloseOtherTabs={handleCloseOtherTabs}
+            onCloseTabsToRight={handleCloseTabsToRight}
             onDuplicateTab={handleDuplicateTab}
             onNewTab={handleNewTab}
           />
@@ -885,6 +951,7 @@ export const App: React.FC = () => {
               <GenericResourceTable
                 key={`table-${activeTabId}-${activeResource}-${activeCluster?.id || 'cluster'}`}
                 kind={activeResource}
+                clusterId={activeCluster?.id}
                 selectedNamespaces={selectedNamespaces}
                 namespaces={namespaces}
                 isReadOnly={isReadOnly}
@@ -919,7 +986,11 @@ export const App: React.FC = () => {
 
           <BottomPanel
             isOpen={isPanelOpen}
-            onClose={() => setIsPanelOpen(false)}
+            onClose={handleCloseAllPanelTabs}
+            onCloseAllTabs={handleCloseAllPanelTabs}
+            onCloseOtherTabs={handleCloseOtherPanelTabs}
+            onCloseTabsToRight={handleClosePanelTabsToRight}
+            onCloseTab={handleClosePanelTab}
             tabs={panelTabs}
             activeTabId={activePanelTabId}
             onTabChange={setActivePanelTabId}
@@ -1082,6 +1153,13 @@ export const App: React.FC = () => {
         updateInfo={updateInfo}
         isChecking={isCheckingUpdates}
         onCheckAgain={() => handleCheckForUpdates(true)}
+      />
+
+      <DiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        activeCluster={activeCluster}
+        healthInfo={healthInfo}
       />
     </div>
   );

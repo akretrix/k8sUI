@@ -209,4 +209,24 @@ describe('Sidebar Component', () => {
     expect(screen.getByText('TargetGroupBinding')).toBeInTheDocument();
     expect(screen.queryByText('Certificate')).not.toBeInTheDocument();
   });
+
+  it('opens resource in a new tab when double-clicked', () => {
+    const handleSelect = vi.fn();
+    render(<Sidebar activeResource="pods" onSelectResource={handleSelect} />);
+
+    // Double-click Deployments
+    const deploymentsItem = screen.getByText('Deployments');
+    fireEvent.doubleClick(deploymentsItem);
+    expect(handleSelect).toHaveBeenCalledWith('deployments', true);
+
+    // Double-click Secrets
+    const secretsItem = screen.getByText('Secrets');
+    fireEvent.doubleClick(secretsItem);
+    expect(handleSelect).toHaveBeenCalledWith('secrets', true);
+
+    // Double-click Pods
+    const podsItem = screen.getByText('Pods');
+    fireEvent.doubleClick(podsItem);
+    expect(handleSelect).toHaveBeenCalledWith('pods', true);
+  });
 });

@@ -23,6 +23,7 @@ import {
   Coffee,
   Sparkles,
   RefreshCw,
+  Plus,
 } from 'lucide-react';
 import { UpdateInfo } from '../../utils/updateChecker';
 
@@ -167,6 +168,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Individual CRD API groups expand/collapse state
   const [expandedApiGroups, setExpandedApiGroups] = useState<Record<string, boolean>>({});
+
+  // Right-click context menu state for sidebar items
+  const [contextMenu, setContextMenu] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
 
   const crdGroups = useMemo(() => {
     const byGroup = new Map<string, CustomResourceType[]>();
@@ -420,6 +424,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     return (
                       <button
                         key={item.id}
+                        type="button"
                         onClick={(e) => {
                           if (e.metaKey || e.ctrlKey) {
                             onSelectResource(item.id, true);
@@ -427,20 +432,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onSelectResource(item.id);
                           }
                         }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          onSelectResource(item.id, true);
+                        }}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setContextMenu({ id: item.id, label: item.label, x: e.clientX, y: e.clientY });
+                        }}
                         onAuxClick={(e) => {
                           if (e.button === 1) {
                             e.preventDefault();
                             onSelectResource(item.id, true);
                           }
                         }}
-                        className={`w-full text-left pl-7 pr-3 py-1.5 rounded-md text-xs transition-all flex items-center justify-between ${
+                        className={`w-full text-left pl-7 pr-2 py-1.5 rounded-md text-xs transition-all flex items-center justify-between cursor-pointer group/item ${
                           isActive
                             ? 'bg-brand-500/20 text-brand-300 font-semibold border-l-2 border-brand-500'
                             : 'text-gray-400 hover:text-gray-200 hover:bg-surface/50'
                         }`}
-                        title={`${item.label} (Cmd+Click to open in new tab)`}
+                        title={`${item.label} (Click to switch, double-click or + to open in new tab)`}
                       >
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate flex-1">{item.label}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectResource(item.id, true);
+                          }}
+                          className="opacity-0 group-hover/item:opacity-100 p-0.5 rounded hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-300 transition-all shrink-0 ml-1"
+                          title="Open in new tab"
+                          aria-label={`Open ${item.label} in new tab`}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </span>
                       </button>
                     );
                   })}
@@ -478,6 +504,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 return (
                                   <button
                                     key={t.plural}
+                                    type="button"
                                     onClick={(e) => {
                                       if (e.metaKey || e.ctrlKey) {
                                         onSelectResource(t.plural, true);
@@ -485,29 +512,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                         onSelectResource(t.plural);
                                       }
                                     }}
+                                    onDoubleClick={(e) => {
+                                      e.preventDefault();
+                                      onSelectResource(t.plural, true);
+                                    }}
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      setContextMenu({ id: t.plural, label: t.kind, x: e.clientX, y: e.clientY });
+                                    }}
                                     onAuxClick={(e) => {
                                       if (e.button === 1) {
                                         e.preventDefault();
                                         onSelectResource(t.plural, true);
                                       }
                                     }}
-                                    className={`w-full flex items-center justify-between text-left pl-10 pr-3 py-1 rounded-md text-xs transition-colors ${
+                                    className={`w-full flex items-center justify-between text-left pl-10 pr-2 py-1 rounded-md text-xs transition-colors cursor-pointer group/crd ${
                                       isActive
                                         ? 'bg-brand-500/20 text-brand-300 font-medium'
                                         : 'text-gray-400 hover:text-gray-200 hover:bg-surface/50'
                                     }`}
                                     title={
                                       t.established
-                                        ? `${t.kind} — Established (Cmd+Click to open in new tab)`
+                                        ? `${t.kind} — Established (Click to switch, or + to open in new tab)`
                                         : `${t.kind} — not Established`
                                     }
                                   >
-                                    <span className="truncate">{t.kind}</span>
-                                    {t.established ? (
-                                      <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                                    ) : (
-                                      <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
-                                    )}
+                                    <span className="truncate flex-1">{t.kind}</span>
+                                    <div className="flex items-center space-x-1 shrink-0">
+                                      <span
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          onSelectResource(t.plural, true);
+                                        }}
+                                        className="opacity-0 group-hover/crd:opacity-100 p-0.5 rounded hover:bg-cyan-500/20 text-gray-400 hover:text-cyan-300 transition-all"
+                                        title="Open in new tab"
+                                        aria-label={`Open ${t.kind} in new tab`}
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                      </span>
+                                      {t.established ? (
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                                      ) : (
+                                        <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                                      )}
+                                    </div>
                                   </button>
                                 );
                               })}
@@ -562,6 +612,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span>Support AkreTrix</span>
         </button>
       </div>
+
+      {/* Floating Right-Click Context Menu for Sidebar Resources */}
+      {contextMenu && (
+        <>
+          <div className="fixed inset-0 z-50" onClick={() => setContextMenu(null)} />
+          <div
+            className="fixed rounded-xl bg-[#0E131F] border border-gray-800 shadow-2xl z-50 py-1.5 text-xs font-mono w-48 animate-in fade-in zoom-in-95 duration-100"
+            style={{
+              left: Math.min(contextMenu.x, window.innerWidth - 200),
+              top: Math.min(contextMenu.y, window.innerHeight - 120),
+            }}
+          >
+            <div className="px-3 py-1 text-[11px] text-gray-500 border-b border-gray-800/80 font-semibold truncate">
+              {contextMenu.label}
+            </div>
+            <button
+              onClick={() => {
+                const id = contextMenu.id;
+                setContextMenu(null);
+                onSelectResource(id, true);
+              }}
+              className="w-full text-left px-3 py-1.5 text-cyan-300 hover:bg-gray-800 hover:text-white flex items-center space-x-2 transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Open in New Tab</span>
+            </button>
+            <button
+              onClick={() => {
+                const id = contextMenu.id;
+                setContextMenu(null);
+                onSelectResource(id, false);
+              }}
+              className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white flex items-center space-x-2 transition-colors cursor-pointer"
+            >
+              <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+              <span>Open in Current Tab</span>
+            </button>
+          </div>
+        </>
+      )}
     </aside>
   );
 };

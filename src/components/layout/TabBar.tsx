@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppTab } from '../../types/tabs';
-import { X, Plus, MoreHorizontal, Layers, Trash2, Copy } from 'lucide-react';
+import { X, Plus, MoreHorizontal, Layers, Trash2, Copy, ArrowRight } from 'lucide-react';
 
 interface TabBarProps {
   tabs: AppTab[];
@@ -9,6 +9,7 @@ interface TabBarProps {
   onCloseTab: (tabId: string, e?: React.MouseEvent) => void;
   onCloseAllTabs: () => void;
   onCloseOtherTabs: (tabId: string) => void;
+  onCloseTabsToRight?: (tabId: string) => void;
   onDuplicateTab?: (tabId: string) => void;
   onNewTab: () => void;
 }
@@ -20,6 +21,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onCloseTab,
   onCloseAllTabs,
   onCloseOtherTabs,
+  onCloseTabsToRight,
   onDuplicateTab,
   onNewTab,
 }) => {
@@ -52,7 +54,12 @@ export const TabBar: React.FC<TabBarProps> = ({
   return (
     <div className="h-9 border-b border-border bg-[#0B0F17]/90 backdrop-blur flex items-center justify-between px-2 select-none shrink-0 z-20">
       {/* Scrollable Tabs List */}
-      <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar flex-1 py-1">
+      <div
+        className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar flex-1 py-1"
+        onDoubleClick={(e) => {
+          if (e.target === e.currentTarget) onNewTab();
+        }}
+      >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const envInfo = getEnvBadge(tab.environment);
@@ -183,6 +190,19 @@ export const TabBar: React.FC<TabBarProps> = ({
               >
                 <span>Close Other Tabs</span>
               </button>
+              {onCloseTabsToRight && (
+                <button
+                  onClick={() => {
+                    setShowMenu(false);
+                    onCloseTabsToRight(activeTabId);
+                  }}
+                  disabled={tabs.findIndex((t) => t.id === activeTabId) === tabs.length - 1}
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Close Tabs to the Right</span>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setShowMenu(false);
@@ -224,6 +244,19 @@ export const TabBar: React.FC<TabBarProps> = ({
               >
                 <span>Close Other Tabs</span>
               </button>
+              {onCloseTabsToRight && (
+                <button
+                  onClick={() => {
+                    onCloseTabsToRight(contextMenuTabId);
+                    setContextMenuTabId(null);
+                  }}
+                  disabled={tabs.findIndex((t) => t.id === contextMenuTabId) === tabs.length - 1}
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
+                >
+                  <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Close Tabs to the Right</span>
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   onCloseTab(contextMenuTabId, e);

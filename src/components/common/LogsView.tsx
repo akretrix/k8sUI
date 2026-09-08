@@ -4,6 +4,7 @@ import {
   Download,
   WrapText,
   Clock,
+  RotateCcw,
 } from 'lucide-react';
 import { api, isTauri } from '../../api/tauriClient';
 import { PodSummary } from '../../types/cluster';
@@ -383,6 +384,33 @@ export const LogsView: React.FC<LogsViewProps> = ({
           >
             {isFollowing ? 'Live' : 'Paused'}
           </button>
+
+          <button
+            onClick={() => {
+              const next = !previous;
+              setPrevious(next);
+              setLogs([]);
+              if (next) {
+                setIsFollowing(false);
+              } else {
+                setIsFollowing(true);
+              }
+            }}
+            className={`px-2 py-1 rounded text-xs border font-mono transition-colors flex items-center space-x-1.5 ${
+              previous
+                ? 'bg-amber-950/80 border-amber-600 text-amber-300 shadow-sm'
+                : 'bg-surface-elevated border-border text-gray-400 hover:text-gray-200 hover:bg-surface-hover'
+            }`}
+            title={
+              previous
+                ? 'Showing Terminated/Previous Container Logs (Click to show Current live logs)'
+                : 'Show Terminated/Previous Container Logs (--previous)'
+            }
+            aria-label={previous ? 'Showing Previous Container Logs' : 'Show Previous Container Logs'}
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Previous</span>
+          </button>
           
           <button
             onClick={() => setTimestamps(!timestamps)}
@@ -421,6 +449,28 @@ export const LogsView: React.FC<LogsViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Previous Logs Notice Banner */}
+      {previous && (
+        <div className="px-4 py-1.5 bg-amber-950/40 border-b border-amber-800/60 flex items-center justify-between text-xs font-mono text-amber-300 shrink-0">
+          <div className="flex items-center space-x-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <span>
+              Showing logs from <strong>previous terminated container</strong> (<code>--previous</code>).
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setPrevious(false);
+              setLogs([]);
+              setIsFollowing(true);
+            }}
+            className="text-[11px] underline hover:text-amber-200 text-amber-400 cursor-pointer"
+          >
+            Return to current live logs
+          </button>
+        </div>
+      )}
 
       {/* Search & Filter Toolbar */}
       <div className="px-4 py-2 border-b border-border/80 bg-surface/70 flex items-center justify-between gap-2 shrink-0 text-xs">
@@ -473,7 +523,24 @@ export const LogsView: React.FC<LogsViewProps> = ({
         className="flex-1 p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300"
       >
         {error ? (
-          <div className="text-rose-400 p-2 bg-rose-950/20 border border-rose-900/50 rounded">{error}</div>
+          <div className="p-3 bg-rose-950/30 border border-rose-900/60 rounded-lg flex items-start justify-between gap-3 text-xs font-mono">
+            <div className="space-y-1">
+              <div className="font-semibold text-rose-300">Unable to retrieve logs</div>
+              <div className="text-rose-400 text-[11px] whitespace-pre-wrap">{error}</div>
+            </div>
+            {previous && (
+              <button
+                onClick={() => {
+                  setPrevious(false);
+                  setLogs([]);
+                  setIsFollowing(true);
+                }}
+                className="px-2.5 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30 text-[11px] shrink-0 transition-colors cursor-pointer"
+              >
+                Switch to Live Logs
+              </button>
+            )}
+          </div>
         ) : (
           filteredLogs.map((log, i) => (
             <LogLineItem

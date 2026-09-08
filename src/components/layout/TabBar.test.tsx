@@ -103,4 +103,24 @@ describe('TabBar', () => {
     fireEvent.click(screen.getByText('Close All Tabs'));
     expect(onCloseAllTabs).toHaveBeenCalledTimes(1);
   });
+
+  it('allows closing tabs to the right from menu', () => {
+    const onCloseTabsToRight = vi.fn();
+    render(
+      <TabBar
+        tabs={sampleTabs}
+        activeTabId="tab-1"
+        onSelectTab={vi.fn()}
+        onCloseTab={vi.fn()}
+        onCloseAllTabs={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onCloseTabsToRight={onCloseTabsToRight}
+        onNewTab={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Tab Options'));
+    fireEvent.click(screen.getByText('Close Tabs to the Right'));
+    expect(onCloseTabsToRight).toHaveBeenCalledWith('tab-1');
+  });
 });

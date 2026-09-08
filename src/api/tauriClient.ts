@@ -15,16 +15,94 @@ export type { PodSummary, ClusterHealthInfo };
 // Helper to check if running inside Tauri desktop shell
 export const isTauri = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI_IPC__' in window || '__TAURI__' in window || navigator.userAgent.includes('Tauri'));
 
-async function invokeTauri<T>(cmd: string, args: Record<string, any> = {}): Promise<T> {
-  if (isTauri) {
-    const { invoke } = await import('@tauri-apps/api/core');
-    const res = await invoke<{ success: boolean; data?: T; error?: string }>(cmd, args);
-    if (!res.success) {
-      throw new Error(res.error || `Command ${cmd} failed`);
+export interface IpcLogEntry {
+  id: string;
+  cmd: string;
+  args: Record<string, any>;
+  startTime: number;
+  endTime?: number;
+  durationMs?: number;
+  status: 'pending' | 'success' | 'error';
+  error?: string;
+}
+
+const MAX_IPC_LOGS = 200;
+let ipcLogHistory: IpcLogEntry[] = [];
+let ipcCounter = 0;
+export type IpcListener = (entry: IpcLogEntry, history: IpcLogEntry[]) => void;
+const ipcListeners: Set<IpcListener> = new Set();
+
+function notifyIpcListeners(entry: IpcLogEntry) {
+  ipcListeners.forEach((fn) => {
+    try {
+      fn(entry, ipcLogHistory);
+    } catch (e) {
+      console.error('Error in IPC listener:', e);
     }
-    return res.data as T;
+  });
+}
+
+async function invokeTauri<T>(cmd: string, args: Record<string, any> = {}): Promise<T> {
+  const id = `ipc-${Date.now()}-${++ipcCounter}`;
+  const startTime = Date.now();
+  const entry: IpcLogEntry = {
+    id,
+    cmd,
+    args,
+    startTime,
+    status: 'pending',
+  };
+
+  ipcLogHistory = [entry, ...ipcLogHistory.slice(0, MAX_IPC_LOGS - 1)];
+  notifyIpcListeners(entry);
+
+  if (process.env.NODE_ENV !== 'test') {
+    console.debug(`[IPC ->] ${cmd}`, args);
   }
-  return mockClient(cmd, args);
+
+  try {
+    let result: T;
+    if (isTauri) {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const res = await invoke<{ success: boolean; data?: T; error?: string }>(cmd, args);
+      if (!res.success) {
+        throw new Error(res.error || `Command ${cmd} failed`);
+      }
+      result = res.data as T;
+    } else {
+      result = await mockClient(cmd, args);
+    }
+
+    const endTime = Date.now();
+    const durationMs = endTime - startTime;
+    entry.endTime = endTime;
+    entry.durationMs = durationMs;
+    entry.status = 'success';
+    notifyIpcListeners(entry);
+
+    if (process.env.NODE_ENV !== 'test') {
+      if (durationMs > 2000) {
+        console.warn(`[IPC <- SLOW (${durationMs}ms)] ${cmd}`);
+      } else {
+        console.debug(`[IPC <- ${durationMs}ms] ${cmd}`);
+      }
+    }
+
+    return result;
+  } catch (err: any) {
+    const endTime = Date.now();
+    const durationMs = endTime - startTime;
+    entry.endTime = endTime;
+    entry.durationMs = durationMs;
+    entry.status = 'error';
+    entry.error = err?.message || String(err);
+    notifyIpcListeners(entry);
+
+    if (process.env.NODE_ENV !== 'test') {
+      console.error(`[IPC <- ERROR (${durationMs}ms)] ${cmd}:`, err);
+    }
+    throw err;
+  }
 }
 
 // Resilient Mock Layer for browser preview mode
@@ -998,6 +1076,83 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
       };
     }
 
+    case 'open_log_file':
+      return '/Users/johann.trigos/Library/Logs/k8sUI/k8sui.log';
+
+    case 'open_logs_dir':
+      return '/Users/johann.trigos/Library/Logs/k8sUI';
+
+    case 'get_backend_logs':
+      return [
+        `${new Date().toISOString()} [INFO] k8sUI initialized with persistent file logging at ~/Library/Logs/k8sUI/k8sui.log`,
+        `${new Date().toISOString()} [INFO] Active cluster: ${mockClusters.find((c) => c.is_active)?.name || 'pdn-acme'}`,
+        `${new Date().toISOString()} [DEBUG] Query list_resources ready`,
+      ];
+
+    case 'get_resource_events': {
+      const resName = args.name || 'resource';
+      const ns = args.namespace || 'default';
+      const k = args.kind || 'Pod';
+      return [
+        {
+          name: `${resName}.event1`,
+          namespace: ns,
+          type: 'Normal',
+          eventType: 'Normal',
+          reason: 'Scheduled',
+          message: `Successfully assigned ${ns}/${resName} to node-1`,
+          count: 1,
+          source: 'default-scheduler',
+          firstTimestamp: new Date(Date.now() - 600000).toISOString(),
+          lastTimestamp: new Date(Date.now() - 600000).toISOString(),
+          creationTimestamp: new Date(Date.now() - 600000).toISOString(),
+          age: '10m',
+          involvedObject: { kind: k, name: resName, namespace: ns },
+        },
+        {
+          name: `${resName}.event2`,
+          namespace: ns,
+          type: 'Normal',
+          eventType: 'Normal',
+          reason: 'Pulled',
+          message: 'Container image "app:v1.2.0" already present on machine',
+          count: 1,
+          source: 'kubelet',
+          firstTimestamp: new Date(Date.now() - 580000).toISOString(),
+          lastTimestamp: new Date(Date.now() - 580000).toISOString(),
+          creationTimestamp: new Date(Date.now() - 580000).toISOString(),
+          age: '9m',
+          involvedObject: { kind: k, name: resName, namespace: ns },
+        },
+        {
+          name: `${resName}.event3`,
+          namespace: ns,
+          type: 'Normal',
+          eventType: 'Normal',
+          reason: 'Started',
+          message: 'Started container successfully',
+          count: 1,
+          source: 'kubelet',
+          firstTimestamp: new Date(Date.now() - 570000).toISOString(),
+          lastTimestamp: new Date(Date.now() - 570000).toISOString(),
+          creationTimestamp: new Date(Date.now() - 570000).toISOString(),
+          age: '9m',
+          involvedObject: { kind: k, name: resName, namespace: ns },
+        },
+      ];
+    }
+
+    case 'describe_resource':
+    case 'get_resource_yaml': {
+      const resName = args.name || 'resource';
+      const ns = args.namespace || 'default';
+      const k = args.kind || 'Deployment';
+      return `apiVersion: apps/v1\nkind: ${k}\nmetadata:\n  name: ${resName}\n  namespace: ${ns}\nspec:\n  replicas: 2\n  template:\n    spec:\n      containers:\n      - name: ${resName}\n        image: ${resName}:latest\n        resources:\n          requests:\n            cpu: 100m\n            memory: 128Mi\n          limits:\n            cpu: 500m\n            memory: 512Mi\n`;
+    }
+
+    case 'toggle_devtools':
+      return true;
+
     default:
       throw new Error(`Mock for command ${cmd} not implemented`);
   }
@@ -1083,6 +1238,7 @@ export const api = {
   restartResource: (kind: string, name: string, namespace: string) => invokeTauri<boolean>('restart_resource', { kind, name, namespace }),
   deleteResource: (kind: string, name: string, namespace?: string) => invokeTauri<boolean>('delete_resource', { kind, name, namespace }),
   describeResource: (kind: string, name: string, namespace?: string) => invokeTauri<string>('describe_resource', { kind, name, namespace }),
+  getResourceEvents: (kind: string, name: string, namespace?: string) => invokeTauri<any[]>('get_resource_events', { kind, name, namespace }),
   getResourceYaml: (kind: string, name: string, namespace?: string) => invokeTauri<string>('get_resource_yaml', { kind, name, namespace }),
   getAuditLogs: () => invokeTauri<AuditEntry[]>('get_audit_logs'),
   listAwsSsoOrgs: () => invokeTauri<any[]>('list_aws_sso_orgs'),
@@ -1195,5 +1351,69 @@ export const api = {
     }
     window.open(url, '_blank');
     return Promise.resolve();
+  },
+  openLogFile: () => invokeTauri<string>('open_log_file'),
+  openLogsDir: () => invokeTauri<string>('open_logs_dir'),
+  getBackendLogs: (limit?: number) => invokeTauri<string[]>('get_backend_logs', { limit }),
+  toggleDevtools: () => invokeTauri<boolean>('toggle_devtools'),
+  getIpcHistory: () => [...ipcLogHistory],
+  clearIpcHistory: () => {
+    ipcLogHistory = [];
+  },
+  subscribeToIpcLogs: (listener: IpcListener) => {
+    ipcListeners.add(listener);
+    return () => {
+      ipcListeners.delete(listener);
+    };
+  },
+  getDiagnosticsBundle: async () => {
+    let activeCluster: ClusterContextSummary | null = null;
+    let health: ClusterHealthInfo | null = null;
+    let backendLogs: string[] = [];
+
+    try {
+      activeCluster = await api.getActiveCluster();
+    } catch {
+      // ignore
+    }
+
+    try {
+      health = await api.checkClusterHealth();
+    } catch {
+      // ignore
+    }
+
+    try {
+      backendLogs = await api.getBackendLogs(50);
+    } catch {
+      // ignore
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      platform: typeof navigator !== 'undefined' ? navigator.platform : 'Unknown',
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown',
+      isTauri,
+      appVersion: '0.1.2',
+      activeCluster: activeCluster
+        ? {
+            name: activeCluster.name,
+            provider: activeCluster.provider,
+            environment: activeCluster.environment,
+            serverUrl: activeCluster.server_url,
+            k8sVersion: activeCluster.k8s_version,
+          }
+        : null,
+      health: health
+        ? {
+            status: health.status,
+            latencyMs: health.latency_ms,
+            lastChecked: health.last_checked,
+          }
+        : null,
+      ipcTransactionsCount: ipcLogHistory.length,
+      recentIpcHistory: ipcLogHistory.slice(0, 30),
+      recentBackendLogs: backendLogs,
+    };
   },
 };

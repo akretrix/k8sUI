@@ -523,6 +523,26 @@ pub async fn describe_resource(
 }
 
 #[tauri::command]
+pub async fn get_resource_events(
+    kind: String,
+    name: String,
+    namespace: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<Vec<serde_json::Value>>, String> {
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr
+        .get_resource_events(&kind, &name, namespace.as_deref())
+        .await
+    {
+        Ok(res) => Ok(ApiResponse::ok(res)),
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
 pub async fn get_resource_yaml(
     kind: String,
     name: String,
@@ -1665,5 +1685,83 @@ pub async fn save_file(
     match std::fs::write(&path, contents) {
         Ok(_) => Ok(crate::commands::ApiResponse::ok(())),
         Err(e) => Ok(crate::commands::ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn open_log_file() -> Result<ApiResponse<String>, String> {
+    let path = crate::get_log_file_path();
+    let path_str = path.to_string_lossy().to_string();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&path_str).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd").args(&["/C", "start", "", &path_str]).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&path_str).spawn();
+    }
+    Ok(ApiResponse::ok(path_str))
+}
+
+#[tauri::command]
+pub async fn open_logs_dir() -> Result<ApiResponse<String>, String> {
+    let path = crate::get_log_file_path();
+    let parent = path.parent().unwrap_or(&path);
+    let parent_str = parent.to_string_lossy().to_string();
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&parent_str).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("explorer").arg(&parent_str).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&parent_str).spawn();
+    }
+    Ok(ApiResponse::ok(parent_str))
+}
+
+#[tauri::command]
+pub async fn get_backend_logs(limit: Option<usize>) -> Result<ApiResponse<Vec<String>>, String> {
+    let max_lines = limit.unwrap_or(200);
+    let path = crate::get_log_file_path();
+    if !path.exists() {
+        return Ok(ApiResponse::ok(vec!["[INFO] Log file not yet created.".to_string()]));
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            let lines: Vec<String> = content
+                .lines()
+                .rev()
+                .take(max_lines)
+                .map(|s| s.to_string())
+                .collect();
+            let mut ordered = lines;
+            ordered.reverse();
+            Ok(ApiResponse::ok(ordered))
+        }
+        Err(e) => Ok(ApiResponse::err(format!("Failed to read logs: {e}"))),
+    }
+}
+
+#[tauri::command]
+pub async fn toggle_devtools(app: tauri::AppHandle) -> Result<ApiResponse<bool>, String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_devtools_open() {
+            window.close_devtools();
+            Ok(ApiResponse::ok(false))
+        } else {
+            window.open_devtools();
+            Ok(ApiResponse::ok(true))
+        }
+    } else {
+        Ok(ApiResponse::err("Main window not found".to_string()))
     }
 }

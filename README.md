@@ -3,9 +3,9 @@
 <!-- Replace with your actual logo -->
 <img src="assets/logo.png" alt="k8sUI Logo" width="96" height="96" />
 
-# k8sUI
+# k8sUI — Native Kubernetes UI & Graphical Desktop Client (GUI)
 
-**Enterprise-grade, open-source Kubernetes desktop manager for multi-cloud & local clusters.**
+**Enterprise-grade, open-source native Kubernetes UI and desktop client for multi-cloud (AWS EKS, Azure AKS) and local clusters.**
 
 [![GitHub Release](https://img.shields.io/github/v/release/akretrix/k8sUI?sort=semver&logo=github)](https://github.com/akretrix/k8sUI/releases)
 [![CI Status](https://github.com/akretrix/k8sUI/actions/workflows/ci.yml/badge.svg)](https://github.com/akretrix/k8sUI/actions/workflows/ci.yml)

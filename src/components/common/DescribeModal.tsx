@@ -40,11 +40,25 @@ import {
   Tag,
   Calendar,
   Clock,
+  Bell,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import { load as yamlLoad } from 'js-yaml';
 import { api, SecretDetails, HelmReleaseDetails, PodSummary } from '../../api/tauriClient';
 import { HelmUpgradeModal } from '../helm/HelmUpgradeModal';
 import { MetadataLabelsAnnotations } from './MetadataLabelsAnnotations';
+import { calculateWorkloadResources } from '../../utils/k8sResources';
+
+export interface ServiceEndpointTarget {
+  podName?: string;
+  namespace?: string;
+  ip: string;
+  nodeName?: string;
+  ready: boolean;
+  status?: string;
+  ports?: Array<{ name?: string; port: number; protocol?: string }>;
+}
 
 interface DescribeModalProps {
   isOpen: boolean;
@@ -107,8 +121,12 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'metadata' | 'metrics' | 'describe' | 'values' | 'history' | 'notes' | 'manifest'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'metadata' | 'metrics' | 'events' | 'describe' | 'values' | 'history' | 'notes' | 'manifest'>('overview');
   const [rawFilter, setRawFilter] = useState('');
+  const [resourceEvents, setResourceEvents] = useState<any[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventFilter, setEventFilter] = useState('');
+  const [eventSeverityFilter, setEventSeverityFilter] = useState<'all' | 'warning' | 'normal'>('all');
 
   // Breadcrumb navigation history
   const [history, setHistory] = useState<any[]>([]);
@@ -138,6 +156,11 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const [nodePodsLoading, setNodePodsLoading] = useState(false);
   const [nodePodFilter, setNodePodFilter] = useState('');
 
+  // Service inspection & target endpoints state
+  const [serviceEndpoints, setServiceEndpoints] = useState<ServiceEndpointTarget[]>([]);
+  const [serviceEndpointsLoading, setServiceEndpointsLoading] = useState(false);
+  const [servicePodFilter, setServicePodFilter] = useState('');
+
   // Collapse / Expand state
   const [expandedEnv, setExpandedEnv] = useState<Record<string, boolean>>({});
   const [envFilters, setEnvFilters] = useState<Record<string, string>>({});
@@ -162,6 +185,9 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
       setIsUninstallingHelm(false);
       setHelmActionError(null);
       setNodePodFilter('');
+      setServiceEndpoints([]);
+      setServiceEndpointsLoading(false);
+      setServicePodFilter('');
     }
   }, [resource]);
 
@@ -172,6 +198,8 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
       setSecretDetails(null);
       setHelmDetails(null);
       setNodePods([]);
+      setServiceEndpoints([]);
+      setResourceEvents([]);
       return;
     }
     setLoading(true);
@@ -227,6 +255,114 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
         .finally(() => setNodePodsLoading(false));
     } else {
       setNodePods([]);
+    }
+
+    const isSvcRes = ['service', 'services'].includes((currentResource?.kind || '').toLowerCase());
+    if (isSvcRes) {
+      setServiceEndpointsLoading(true);
+      setServiceEndpoints([]);
+      setServicePodFilter('');
+
+      Promise.allSettled([
+        typeof api.describeResource === 'function'
+          ? api.describeResource('endpoints', currentResource.name, currentResource.namespace)
+          : Promise.resolve(''),
+        typeof api.listPods === 'function'
+          ? api.listPods(currentResource.namespace)
+          : Promise.resolve([]),
+      ])
+        .then(([epResult, podsResult]) => {
+          const allNamespacePods: PodSummary[] =
+            podsResult.status === 'fulfilled' && Array.isArray(podsResult.value)
+              ? podsResult.value
+              : [];
+          const podMap = new Map<string, PodSummary>();
+          allNamespacePods.forEach((p) => podMap.set(p.name, p));
+
+          const targets: ServiceEndpointTarget[] = [];
+
+          if (epResult.status === 'fulfilled' && epResult.value) {
+            try {
+              const epData = yamlLoad(epResult.value) as any;
+              const subsets = epData?.subsets || [];
+              for (const subset of subsets) {
+                const subPorts = subset.ports || [];
+                for (const addr of subset.addresses || []) {
+                  const podName = addr.targetRef?.name;
+                  const podInfo = podName ? podMap.get(podName) : undefined;
+                  targets.push({
+                    podName,
+                    namespace: addr.targetRef?.namespace || currentResource.namespace,
+                    ip: addr.ip,
+                    nodeName: addr.nodeName || podInfo?.node,
+                    ready: true,
+                    status: podInfo?.status || 'Running',
+                    ports: subPorts,
+                  });
+                }
+                for (const addr of subset.notReadyAddresses || []) {
+                  const podName = addr.targetRef?.name;
+                  const podInfo = podName ? podMap.get(podName) : undefined;
+                  targets.push({
+                    podName,
+                    namespace: addr.targetRef?.namespace || currentResource.namespace,
+                    ip: addr.ip,
+                    nodeName: addr.nodeName || podInfo?.node,
+                    ready: false,
+                    status: podInfo?.status || 'NotReady',
+                    ports: subPorts,
+                  });
+                }
+              }
+            } catch (err) {
+              console.warn('Failed to parse endpoints YAML:', err);
+            }
+          }
+
+          if (targets.length === 0 && allNamespacePods.length > 0) {
+            const svcBase = (currentResource.name || '').toLowerCase();
+            const matchedPods = allNamespacePods.filter((p) => {
+              const pName = p.name.toLowerCase();
+              return pName.startsWith(svcBase) || (svcBase.includes('otel') && pName.includes('otel'));
+            });
+            for (const p of matchedPods) {
+              targets.push({
+                podName: p.name,
+                namespace: p.namespace,
+                ip: (p as any).ip || (p as any).podIP || 'Pod IP pending',
+                nodeName: p.node,
+                ready: p.status === 'Running',
+                status: p.status,
+                ports: [],
+              });
+            }
+          }
+
+          setServiceEndpoints(targets);
+        })
+        .catch((err) => {
+          console.warn('Failed to fetch service endpoints:', err);
+        })
+        .finally(() => {
+          setServiceEndpointsLoading(false);
+        });
+    } else {
+      setServiceEndpoints([]);
+    }
+
+    // Fetch resource-specific Kubernetes events
+    if (currentResource?.name && typeof api.getResourceEvents === 'function') {
+      setEventsLoading(true);
+      api
+        .getResourceEvents(currentResource.kind, currentResource.name, currentResource.namespace)
+        .then((evts) => setResourceEvents(Array.isArray(evts) ? evts : []))
+        .catch((e) => {
+          console.warn('Failed to get resource events:', e);
+          setResourceEvents([]);
+        })
+        .finally(() => setEventsLoading(false));
+    } else {
+      setResourceEvents([]);
     }
   }, [isOpen, currentResource]);
 
@@ -337,10 +473,23 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
     );
   }, [nodePods, nodePodFilter]);
 
+  const filteredServiceEndpoints = useMemo(() => {
+    if (!servicePodFilter.trim()) return serviceEndpoints;
+    const q = servicePodFilter.toLowerCase();
+    return serviceEndpoints.filter(
+      (ep) =>
+        (ep.podName && ep.podName.toLowerCase().includes(q)) ||
+        (ep.ip && ep.ip.toLowerCase().includes(q)) ||
+        (ep.nodeName && ep.nodeName.toLowerCase().includes(q)) ||
+        (ep.status && ep.status.toLowerCase().includes(q))
+    );
+  }, [serviceEndpoints, servicePodFilter]);
+
   const normalizedKind = (currentResource?.kind || '').toLowerCase();
   const isHelmRelease = ['helm', 'helmrelease', 'helm-releases', 'helmreleases'].includes(normalizedKind);
   const isNode = ['node', 'nodes'].includes(normalizedKind);
-  const isPodOrWorkload = !isHelmRelease && !isNode && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
+  const isService = !isHelmRelease && !isNode && ['service', 'services'].includes(normalizedKind);
+  const isPodOrWorkload = !isHelmRelease && !isNode && !isService && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
   const hasLogs = !isHelmRelease && !isNode && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
   const hasPortForward = !isHelmRelease && !isNode && ['pod', 'pods', 'service', 'services'].includes(normalizedKind);
   const hasScale = !isHelmRelease && !isNode && ['deployment', 'deployments', 'statefulset', 'statefulsets'].includes(normalizedKind);
@@ -357,6 +506,33 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const containerStatuses: any[] = status?.containerStatuses || [];
   const initContainerStatuses: any[] = status?.initContainerStatuses || [];
   const conditions: any[] = status?.conditions || [];
+
+  const workloadResources = useMemo(() => {
+    const replicas = Number(parsedData?.spec?.replicas) || 1;
+    return calculateWorkloadResources(containers, replicas);
+  }, [containers, parsedData?.spec?.replicas]);
+
+  const warningEventsCount = useMemo(() => {
+    return resourceEvents.filter(
+      (e) => (e.type || e.eventType || '').toLowerCase() === 'warning'
+    ).length;
+  }, [resourceEvents]);
+
+  const filteredResourceEvents = useMemo(() => {
+    return resourceEvents.filter((evt) => {
+      const isWarning = (evt.type || evt.eventType || '').toLowerCase() === 'warning';
+      if (eventSeverityFilter === 'warning' && !isWarning) return false;
+      if (eventSeverityFilter === 'normal' && isWarning) return false;
+
+      if (!eventFilter) return true;
+      const q = eventFilter.toLowerCase();
+      const reasonMatch = (evt.reason || '').toLowerCase().includes(q);
+      const msgMatch = (evt.message || '').toLowerCase().includes(q);
+      const srcMatch = (evt.source || '').toLowerCase().includes(q);
+      const objMatch = (evt.involvedObject?.name || evt.involvedObjectName || '').toLowerCase().includes(q);
+      return reasonMatch || msgMatch || srcMatch || objMatch;
+    });
+  }, [resourceEvents, eventSeverityFilter, eventFilter]);
 
   const metadata = parsedData?.metadata || {};
   const labels: Record<string, string> = metadata?.labels || {};
@@ -537,8 +713,14 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   if (!isOpen || !currentResource) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end pointer-events-none bg-black/40 backdrop-blur-[2px]">
-      <div className="w-[1120px] max-w-[92vw] h-full bg-[#0D1117] border-l border-border shadow-2xl flex flex-col transform transition-transform duration-300 pointer-events-auto select-text">
+    <div
+      className="fixed inset-0 z-40 flex justify-end bg-black/50 backdrop-blur-[2px] cursor-pointer animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="w-[1120px] max-w-[92vw] h-full bg-[#0D1117] border-l border-border shadow-2xl flex flex-col transform transition-transform duration-300 cursor-default select-text"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="min-h-[72px] py-3.5 px-6 border-b border-border bg-[#0B0F17]/95 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 shrink-0 z-20">
           <div className="flex items-center space-x-3.5 min-w-0 flex-1">
@@ -877,6 +1059,8 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                     ? `Allocated Pods (${nodePods.length})`
                     : isPodOrWorkload
                     ? `Containers & Storage (${containers.length})`
+                    : isService
+                    ? `Overview & Endpoints (${serviceEndpoints.length})`
                     : 'Resource Overview'}
                 </span>
               </button>
@@ -904,6 +1088,22 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                   <span>Metrics & Telemetry</span>
                 </button>
               )}
+              <button
+                onClick={() => setActiveTab('events')}
+                className={`flex items-center space-x-2 text-xs font-semibold h-full border-b-2 transition-colors ${
+                  activeTab === 'events'
+                    ? 'border-amber-500 text-amber-300'
+                    : 'border-transparent text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5 text-amber-400" />
+                <span>Events ({resourceEvents.length})</span>
+                {warningEventsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-950 text-rose-300 border border-rose-800 animate-pulse">
+                    {warningEventsCount}
+                  </span>
+                )}
+              </button>
               <button
                 onClick={() => setActiveTab('describe')}
                 className={`flex items-center space-x-2 text-xs font-semibold h-full border-b-2 transition-colors ${
@@ -1854,92 +2054,148 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                 </div>
               ) : isPodOrWorkload && containers.length > 0 ? (
                 <div className="space-y-6">
-                  {/* 1. Quick Pod Specs & Lifecycle Summary */}
+                  {/* 1. Quick Pod / Workload Specs & Lifecycle Summary */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
+                    {/* Card 1: QoS Class */}
                     <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
                       <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
                         <Shield className="w-3.5 h-3.5 text-indigo-400" />
                         <span>QoS Class</span>
                       </span>
-                      <div className="text-sm font-bold font-mono text-indigo-300">
-                        {status?.qosClass || 'Burstable'}
+                      <div className={`text-sm font-bold font-mono ${
+                        workloadResources.qosClass === 'Guaranteed'
+                          ? 'text-emerald-300'
+                          : workloadResources.qosClass === 'Burstable'
+                          ? 'text-cyan-300'
+                          : 'text-amber-300'
+                      }`}>
+                        {status?.qosClass || workloadResources.qosClass}
                       </div>
                       <span className="text-[10px] text-gray-500 font-mono">Resource quality tier</span>
                     </div>
 
-                    <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
-                      <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
-                        <HardDrive className="w-3.5 h-3.5 text-brand-400" />
-                        <span>Node Placement</span>
-                      </span>
-                      {spec?.nodeName ? (
-                        <div className="flex items-center justify-between gap-1">
+                    {/* Card 2: Node Placement (for Pods) OR Replicas (for Workloads) */}
+                    {['pod', 'pods'].includes(normalizedKind) ? (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <HardDrive className="w-3.5 h-3.5 text-brand-400" />
+                          <span>Node Placement</span>
+                        </span>
+                        {spec?.nodeName ? (
+                          <div className="flex items-center justify-between gap-1">
+                            <button
+                              onClick={() => handleNavigateTo('Node', spec.nodeName)}
+                              className="text-xs font-bold font-mono text-brand-300 hover:text-brand-200 hover:underline flex items-center space-x-1 truncate max-w-[170px]"
+                              title={`Inspect Node ${spec.nodeName}`}
+                            >
+                              <span className="truncate">{spec.nodeName}</span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(spec.nodeName);
+                              }}
+                              className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
+                              title="Copy Node Name"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="text-xs font-bold font-mono text-gray-400">Unassigned</div>
+                        )}
+                        <span className="text-[10px] text-gray-500 font-mono truncate">{spec?.nodeName || 'Pending scheduler'}</span>
+                      </div>
+                    ) : (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <Layers className="w-3.5 h-3.5 text-brand-400" />
+                          <span>Replicas & Rollout</span>
+                        </span>
+                        <div className="text-xs font-bold font-mono text-brand-300">
+                          {status?.readyReplicas ?? status?.replicas ?? (currentResource?.ready || 1)} / {parsedData?.spec?.replicas ?? 1} Ready
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-mono truncate">
+                          Strategy: {parsedData?.spec?.strategy?.type || 'RollingUpdate'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Card 3: IP Address (for Pods) OR Pod Allocation (for Workloads) */}
+                    {['pod', 'pods'].includes(normalizedKind) ? (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <Radio className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>IP Address</span>
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold font-mono text-emerald-400">
+                            {status?.podIP || 'Pending'}
+                          </span>
+                          {status?.podIP && (
+                            <button
+                              onClick={() => navigator.clipboard.writeText(status.podIP)}
+                              className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
+                              title="Copy Pod IP"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-mono">Host: {status?.hostIP || '—'}</span>
+                      </div>
+                    ) : (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <Cpu className="w-3.5 h-3.5 text-pink-400" />
+                          <span>Pod Allocation</span>
+                        </span>
+                        <div className="text-xs font-bold font-mono text-gray-200">
+                          CPU: <span className="text-emerald-400">{workloadResources.totalCpuRequestFormatted}</span> / <span className={!workloadResources.hasUncappedCpuLimit ? 'text-cyan-400' : 'text-amber-400'}>{workloadResources.totalCpuLimitFormatted}</span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-mono">
+                          Mem: <span className="text-emerald-400">{workloadResources.totalMemoryRequestFormatted}</span> / <span className={!workloadResources.hasUncappedMemoryLimit ? 'text-cyan-400' : 'text-amber-400'}>{workloadResources.totalMemoryLimitFormatted}</span>
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Card 4: Service Account (for Pods) OR Cluster Footprint (for Workloads) */}
+                    {['pod', 'pods'].includes(normalizedKind) ? (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <Key className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Service Account</span>
+                        </span>
+                        {spec?.serviceAccountName ? (
                           <button
-                            onClick={() => handleNavigateTo('Node', spec.nodeName)}
-                            className="text-xs font-bold font-mono text-brand-300 hover:text-brand-200 hover:underline flex items-center space-x-1 truncate max-w-[170px]"
-                            title={`Inspect Node ${spec.nodeName}`}
+                            onClick={() => handleNavigateTo('ServiceAccount', spec.serviceAccountName, activeNamespace)}
+                            className="text-xs font-mono font-bold text-cyan-400 hover:text-cyan-300 hover:underline flex items-center space-x-1 transition-colors text-left truncate"
+                            title={`Inspect ServiceAccount ${spec.serviceAccountName}`}
                           >
-                            <span className="truncate">{spec.nodeName}</span>
+                            <span className="truncate">{spec.serviceAccountName}</span>
                             <ExternalLink className="w-3 h-3 shrink-0" />
                           </button>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(spec.nodeName);
-                            }}
-                            className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
-                            title="Copy Node Name"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-xs font-bold font-mono text-gray-400">Unassigned</div>
-                      )}
-                      <span className="text-[10px] text-gray-500 font-mono truncate">{spec?.nodeName || 'Pending scheduler'}</span>
-                    </div>
-
-                    <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
-                      <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
-                        <Radio className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>IP Address</span>
-                      </span>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold font-mono text-emerald-400">
-                          {status?.podIP || 'Pending'}
-                        </span>
-                        {status?.podIP && (
-                          <button
-                            onClick={() => navigator.clipboard.writeText(status.podIP)}
-                            className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
-                            title="Copy Pod IP"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
+                        ) : (
+                          <span className="text-xs font-mono text-gray-500">default</span>
                         )}
+                        <span className="text-[10px] text-gray-500 font-mono">RBAC identity</span>
                       </div>
-                      <span className="text-[10px] text-gray-500 font-mono">Host: {status?.hostIP || '—'}</span>
-                    </div>
+                    ) : (
+                      <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
+                        <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
+                          <Database className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>Cluster Footprint</span>
+                        </span>
+                        <div className="text-xs font-bold font-mono text-cyan-300">
+                          CPU: {workloadResources.scaledCpuRequestFormatted} / {workloadResources.scaledCpuLimitFormatted}
+                        </div>
+                        <span className="text-[10px] text-gray-400 font-mono">
+                          Mem: {workloadResources.scaledMemoryRequestFormatted} / {workloadResources.scaledMemoryLimitFormatted} ({workloadResources.replicas} pods)
+                        </span>
+                      </div>
+                    )}
 
-                    <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2">
-                      <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center space-x-1.5">
-                        <Key className="w-3.5 h-3.5 text-cyan-400" />
-                        <span>Service Account</span>
-                      </span>
-                      {spec?.serviceAccountName ? (
-                        <button
-                          onClick={() => handleNavigateTo('ServiceAccount', spec.serviceAccountName, activeNamespace)}
-                          className="text-xs font-bold font-mono text-cyan-300 hover:text-cyan-200 hover:underline flex items-center space-x-1 truncate max-w-[170px]"
-                          title={`Inspect ServiceAccount ${spec.serviceAccountName}`}
-                        >
-                          <span className="truncate">{spec.serviceAccountName}</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </button>
-                      ) : (
-                        <div className="text-xs font-bold font-mono text-cyan-300">default</div>
-                      )}
-                      <span className="text-[10px] text-gray-500 font-mono">RBAC identity</span>
-                    </div>
-
+                    {/* Card 5: Age & Uptime */}
                     <div className="bg-[#0B0F17] p-4 rounded-xl border border-border/80 shadow-sm flex flex-col justify-between space-y-2 col-span-1 sm:col-span-2 lg:col-span-1">
                       <span className="text-[11px] text-gray-400 uppercase font-mono font-semibold tracking-wider flex items-center justify-between">
                         <span className="flex items-center space-x-1.5">
@@ -1955,6 +2211,60 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {/* Recent Lifecycle Events Preview Banner */}
+                  {resourceEvents.length > 0 && (
+                    <div className="p-4 rounded-xl bg-[#0B0F17] border border-border/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <Bell className="w-4 h-4 text-amber-400" />
+                          <span className="text-xs font-bold font-mono text-gray-200">
+                            Recent Lifecycle Events ({resourceEvents.length})
+                          </span>
+                          {warningEventsCount > 0 && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-rose-950/80 text-rose-300 border border-rose-800 animate-pulse">
+                              {warningEventsCount} Warning{warningEventsCount > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setActiveTab('events')}
+                          className="text-xs font-mono text-amber-400 hover:text-amber-300 hover:underline flex items-center space-x-1 transition-colors"
+                        >
+                          <span>View all in Events tab</span>
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="divide-y divide-border/40 font-mono text-xs">
+                        {resourceEvents.slice(0, 3).map((evt, idx) => {
+                          const isWarning = (evt.type || evt.eventType || '').toLowerCase() === 'warning';
+                          return (
+                            <div key={idx} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center space-x-2 min-w-0">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                                    isWarning
+                                      ? 'bg-rose-950/70 text-rose-300 border-rose-800'
+                                      : 'bg-emerald-950/70 text-emerald-300 border-emerald-800'
+                                  }`}
+                                >
+                                  {evt.type || evt.eventType || 'Normal'}
+                                </span>
+                                <span className="font-bold text-gray-200">{evt.reason}</span>
+                                <span className="text-gray-400 text-[11px] truncate max-w-md select-text">
+                                  {evt.message}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                {evt.age || 'just now'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
               {/* 2. Containers Section */}
               <div className="space-y-4">
@@ -2016,6 +2326,14 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                       const stateObj = cStatus?.state || {};
                       const stateKey = Object.keys(stateObj)[0] || 'running';
                       const restarts = cStatus?.restartCount ?? 0;
+
+                      const parsedC = workloadResources.containers.find((ct) => ct.name === c.name);
+                      const cpuReqStr = parsedC?.cpuRequestFormatted || c.resources?.requests?.cpu || 'None';
+                      const cpuLimStr = parsedC?.cpuLimitFormatted || c.resources?.limits?.cpu || 'Uncapped';
+                      const memReqStr = parsedC?.memRequestFormatted || c.resources?.requests?.memory || 'None';
+                      const memLimStr = parsedC?.memLimitFormatted || c.resources?.limits?.memory || 'Uncapped';
+                      const hasCpuLim = parsedC?.hasCpuLimit ?? (c.resources?.limits?.cpu !== undefined);
+                      const hasMemLim = parsedC?.hasMemLimit ?? (c.resources?.limits?.memory !== undefined);
 
                       const isContainerOpen = expandedContainers[cName] !== false;
                       const envCount = (c.env?.length || 0) + (c.envFrom?.length || 0);
@@ -2138,21 +2456,32 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
 
                                 {/* Resources */}
                                 <div className="p-3.5 rounded-xl bg-[#070A0F] border border-border/60 space-y-2">
-                                  <span className="text-[11px] text-gray-400 font-semibold flex items-center space-x-1.5">
-                                    <Cpu className="w-3.5 h-3.5 text-pink-400" />
-                                    <span>Resources (Requests / Limits)</span>
-                                  </span>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-gray-400 font-semibold flex items-center space-x-1.5">
+                                      <Cpu className="w-3.5 h-3.5 text-pink-400" />
+                                      <span>Resources (Requests / Limits)</span>
+                                    </span>
+                                    {!hasCpuLim && !hasMemLim && (
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-300 border border-amber-800/80 font-mono">
+                                        Unconstrained
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="grid grid-cols-2 gap-3 text-[11px] pt-1">
                                     <div className="bg-surface/50 p-2 rounded-lg border border-border/50">
                                       <span className="text-gray-500 block text-[10px] uppercase">CPU</span>
                                       <span className="text-gray-200 font-semibold font-mono">
-                                        {c.resources?.requests?.cpu || 'none'} <span className="text-gray-500">/</span> {c.resources?.limits?.cpu || 'none'}
+                                        <span className="text-emerald-400">{cpuReqStr}</span>
+                                        <span className="text-gray-500 mx-1">/</span>
+                                        <span className={hasCpuLim ? 'text-cyan-400' : 'text-amber-400'}>{cpuLimStr}</span>
                                       </span>
                                     </div>
                                     <div className="bg-surface/50 p-2 rounded-lg border border-border/50">
                                       <span className="text-gray-500 block text-[10px] uppercase">Memory</span>
                                       <span className="text-gray-200 font-semibold font-mono">
-                                        {c.resources?.requests?.memory || 'none'} <span className="text-gray-500">/</span> {c.resources?.limits?.memory || 'none'}
+                                        <span className="text-emerald-400">{memReqStr}</span>
+                                        <span className="text-gray-500 mx-1">/</span>
+                                        <span className={hasMemLim ? 'text-cyan-400' : 'text-amber-400'}>{memLimStr}</span>
                                       </span>
                                     </div>
                                   </div>
@@ -2549,6 +2878,379 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                 podTemplateAnnotations={podTemplateAnnotations}
               />
             </div>
+          ) : isService ? (
+            /* Dedicated Service Overview with Target Selector, Ports, and Connected Pods/Endpoints */
+            <div className="space-y-6">
+              {/* 1. Service Network Spec & Configuration Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="bg-surface p-3.5 rounded-xl border border-border/80 space-y-1">
+                  <span className="text-[11px] text-gray-400 uppercase font-mono">Service Type</span>
+                  <div className="text-xs font-bold font-mono text-brand-300 truncate">
+                    {spec.type || 'ClusterIP'}
+                  </div>
+                </div>
+
+                <div className="bg-surface p-3.5 rounded-xl border border-border/80 space-y-1">
+                  <span className="text-[11px] text-gray-400 uppercase font-mono">Cluster IP</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold font-mono text-gray-200 truncate">
+                      {spec.clusterIP || 'None'}
+                    </span>
+                    {spec.clusterIP && spec.clusterIP !== 'None' && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(spec.clusterIP)}
+                        className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
+                        title="Copy Cluster IP"
+                      >
+                        <Copy className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-surface p-3.5 rounded-xl border border-border/80 space-y-1">
+                  <span className="text-[11px] text-gray-400 uppercase font-mono">Target Endpoints</span>
+                  <div className="flex items-center space-x-1.5 font-mono text-xs font-bold">
+                    <span className={`w-2 h-2 rounded-full ${
+                      serviceEndpoints.filter((e) => e.ready).length > 0 ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                    }`} />
+                    <span className={serviceEndpoints.filter((e) => e.ready).length > 0 ? 'text-emerald-300' : 'text-amber-300'}>
+                      {serviceEndpoints.filter((e) => e.ready).length} Ready
+                      {serviceEndpoints.filter((e) => !e.ready).length > 0 && ` / ${serviceEndpoints.filter((e) => !e.ready).length} NotReady`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-surface p-3.5 rounded-xl border border-border/80 space-y-1">
+                  <span className="text-[11px] text-gray-400 uppercase font-mono">Session Affinity</span>
+                  <div className="text-xs font-bold font-mono text-cyan-300 truncate">
+                    {spec.sessionAffinity || 'None'}
+                  </div>
+                </div>
+
+                <div className="bg-surface p-3.5 rounded-xl border border-border/80 space-y-1 col-span-2 md:col-span-1">
+                  <span className="text-[11px] text-gray-400 uppercase font-mono flex items-center justify-between">
+                    <span>Age</span>
+                    <Clock className="w-3 h-3 text-cyan-400" />
+                  </span>
+                  <div className="text-xs font-bold font-mono text-cyan-300">
+                    {creationInfo?.age || currentResource?.age || '—'}
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-mono truncate" title={creationInfo?.full}>
+                    {creationInfo?.formatted || 'Unknown'}
+                  </div>
+                </div>
+              </div>
+
+              {/* LoadBalancer / External IP Banner (if available) */}
+              {(status?.loadBalancer?.ingress?.length > 0 || (Array.isArray(spec.externalIPs) && spec.externalIPs.length > 0)) && (
+                <div className="p-3.5 bg-[#0B0F17] rounded-xl border border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 font-mono text-xs">
+                  <div className="flex items-center space-x-2 text-indigo-300">
+                    <Network className="w-4 h-4 text-indigo-400 shrink-0" />
+                    <span className="font-semibold">External Ingress Points:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {(status?.loadBalancer?.ingress || []).map((ing: any, iIdx: number) => (
+                        <span key={iIdx} className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-200">
+                          {ing.ip || ing.hostname}
+                        </span>
+                      ))}
+                      {(spec.externalIPs || []).map((ip: string, iIdx: number) => (
+                        <span key={`ext-${iIdx}`} className="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-indigo-200">
+                          {ip}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {spec.externalTrafficPolicy && (
+                    <span className="text-gray-400 text-[11px]">
+                      Traffic Policy: <span className="text-gray-200">{spec.externalTrafficPolicy}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* 2. Target Pod Selector (spec.selector) */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <Radio className="w-4 h-4 text-brand-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-200 font-mono">
+                      Target Pod Selector ({spec.selector ? Object.keys(spec.selector).length : 0} labels)
+                    </h3>
+                  </div>
+                  {spec.selector && Object.keys(spec.selector).length > 0 && (
+                    <button
+                      onClick={() => {
+                        const selectorStr = Object.entries(spec.selector).map(([k, v]) => `${k}=${v}`).join(',');
+                        navigator.clipboard.writeText(`kubectl get pods -n ${activeNamespace} -l ${selectorStr}`);
+                      }}
+                      className="text-[11px] text-brand-400 hover:text-brand-300 font-mono flex items-center space-x-1.5 transition-colors"
+                      title="Copy kubectl command to query matching pods"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy kubectl query command</span>
+                    </button>
+                  )}
+                </div>
+
+                {spec.selector && Object.keys(spec.selector).length > 0 ? (
+                  <div className="bg-surface p-4 rounded-xl border border-border/80 space-y-2.5">
+                    <div className="text-[11px] text-gray-400 font-mono">
+                      Traffic sent to this Service is load-balanced across Pods in namespace <code className="text-brand-300">{activeNamespace}</code> matching all of the following labels:
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(spec.selector).map(([k, v]: [string, any]) => (
+                        <div
+                          key={k}
+                          className="inline-flex items-center bg-[#0B0F17] border border-border/80 rounded-lg px-2.5 py-1 text-xs font-mono text-gray-200 group"
+                        >
+                          <span className="text-brand-300 font-semibold">{k}</span>
+                          <span className="text-gray-500 mx-1.5">=</span>
+                          <span className="text-indigo-300">{String(v)}</span>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(`${k}=${v}`)}
+                            className="ml-2 text-gray-500 hover:text-gray-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Copy selector pair"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-surface p-4 rounded-xl border border-border/80 text-xs font-mono text-amber-300/90 flex items-start space-x-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-semibold text-amber-200">No label selector defined</div>
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        This Service does not use label selectors to target Pods. It may be a Headless service, ExternalName, or routes to manually managed Endpoints.
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Port & Protocol Mappings */}
+              {Array.isArray(spec.ports) && spec.ports.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-2">
+                    <ArrowDownUp className="w-4 h-4 text-cyan-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-200 font-mono">
+                      Exposed Ports & Protocol Mappings ({spec.ports.length})
+                    </h3>
+                  </div>
+                  <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead className="bg-[#0B0F17] border-b border-border/80 text-gray-400 text-[11px] uppercase">
+                        <tr>
+                          <th className="px-4 py-2.5 font-semibold">Port Name</th>
+                          <th className="px-4 py-2.5 font-semibold">Service Port</th>
+                          <th className="px-4 py-2.5 font-semibold">Protocol</th>
+                          <th className="px-4 py-2.5 font-semibold">Target Port (Pod)</th>
+                          {spec.ports.some((p: any) => p.nodePort) && (
+                            <th className="px-4 py-2.5 font-semibold">NodePort</th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {spec.ports.map((p: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-surface-elevated/40 transition-colors">
+                            <td className="px-4 py-2.5 font-semibold text-gray-200">
+                              {p.name ? (
+                                <span className="px-2 py-0.5 rounded bg-brand-500/10 border border-brand-500/20 text-brand-300 text-[11px]">
+                                  {p.name}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-indigo-300 font-bold">{p.port}</td>
+                            <td className="px-4 py-2.5 text-gray-400 text-[11px]">{p.protocol || 'TCP'}</td>
+                            <td className="px-4 py-2.5 text-emerald-300 font-bold">{p.targetPort || p.port}</td>
+                            {spec.ports.some((prt: any) => prt.nodePort) && (
+                              <td className="px-4 py-2.5 text-amber-300 font-mono">{p.nodePort || '—'}</td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Connected Target Pods & Endpoints */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <Box className="w-4 h-4 text-emerald-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-200 font-mono">
+                      Connected Target Pods & Endpoints ({filteredServiceEndpoints.length})
+                    </h3>
+                  </div>
+
+                  {serviceEndpoints.length > 0 && (
+                    <div className="relative w-64">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-gray-500" />
+                      <input
+                        type="text"
+                        value={servicePodFilter}
+                        onChange={(e) => setServicePodFilter(e.target.value)}
+                        placeholder="Filter by Pod name or IP…"
+                        className="w-full pl-8 pr-3 py-1 bg-surface border border-border rounded-lg text-xs text-gray-200 placeholder-gray-500 font-mono focus:outline-none focus:border-brand-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {serviceEndpointsLoading ? (
+                  <div className="flex items-center justify-center py-10 bg-surface rounded-xl border border-border text-gray-400 space-x-2 text-xs font-mono">
+                    <Loader2 className="w-4 h-4 animate-spin text-brand-400" />
+                    <span>Resolving active Pod endpoints for this Service…</span>
+                  </div>
+                ) : filteredServiceEndpoints.length === 0 ? (
+                  <div className="bg-surface p-6 rounded-xl border border-border space-y-2 font-mono text-xs">
+                    <div className="text-gray-300 font-semibold flex items-center space-x-2">
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        {servicePodFilter ? 'No Pod endpoints match your filter.' : 'No active Pod endpoints connected to this Service.'}
+                      </span>
+                    </div>
+                    {!servicePodFilter && spec.selector && Object.keys(spec.selector).length > 0 && (
+                      <p className="text-gray-400 text-[11px] pl-6 leading-relaxed">
+                        This Service defines a selector, but no healthy Pods currently match it in namespace <code className="text-brand-300">{activeNamespace}</code>. Ensure target Pods are running and passing readiness probes.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                    <table className="w-full text-left font-mono text-xs">
+                      <thead className="bg-[#0B0F17] border-b border-border/80 text-gray-400 text-[11px] uppercase">
+                        <tr>
+                          <th className="px-4 py-2.5 font-semibold">Pod Name</th>
+                          <th className="px-4 py-2.5 font-semibold">Pod IP</th>
+                          <th className="px-4 py-2.5 font-semibold">Node</th>
+                          <th className="px-4 py-2.5 font-semibold">Readiness</th>
+                          <th className="px-4 py-2.5 font-semibold">Target Ports</th>
+                          <th className="px-4 py-2.5 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/40">
+                        {filteredServiceEndpoints.map((ep, idx) => (
+                          <tr key={idx} className="hover:bg-surface-elevated/40 transition-colors">
+                            <td className="px-4 py-3 font-semibold text-gray-200">
+                              {ep.podName ? (
+                                <span className="truncate block max-w-[220px]" title={ep.podName}>
+                                  {ep.podName}
+                                </span>
+                              ) : (
+                                <span className="text-gray-500 italic">Unlabeled Endpoint</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center space-x-1.5 text-emerald-400 font-bold">
+                                <span>{ep.ip}</span>
+                                <button
+                                  onClick={() => navigator.clipboard.writeText(ep.ip)}
+                                  className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
+                                  title="Copy Pod IP"
+                                >
+                                  <Copy className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-gray-400 text-[11px]">
+                              {ep.nodeName ? (
+                                <button
+                                  onClick={() => handleNavigateTo('Node', ep.nodeName!)}
+                                  className="text-brand-300 hover:text-brand-200 hover:underline flex items-center space-x-1 truncate max-w-[140px]"
+                                  title={`Inspect Node ${ep.nodeName}`}
+                                >
+                                  <span className="truncate">{ep.nodeName}</span>
+                                  <ExternalLink className="w-3 h-3 shrink-0" />
+                                </button>
+                              ) : (
+                                '—'
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center space-x-1.5">
+                                <span className={`w-2 h-2 rounded-full ${ep.ready ? 'bg-emerald-400' : 'bg-red-400'}`} />
+                                <span className={`text-[11px] font-semibold ${ep.ready ? 'text-emerald-300' : 'text-red-300'}`}>
+                                  {ep.ready ? 'Ready' : 'Not Ready'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-gray-300">
+                              <div className="flex flex-wrap gap-1">
+                                {(ep.ports || []).map((port, pIdx) => (
+                                  <span key={pIdx} className="px-1.5 py-0.5 rounded bg-[#0B0F17] border border-border/60 text-[10px] text-indigo-300">
+                                    {port.port}/{port.protocol || 'TCP'}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {ep.podName && (
+                                <button
+                                  onClick={() => {
+                                    setHistory((prev) => [...prev, currentResource]);
+                                    setCurrentResource({
+                                      kind: 'Pod',
+                                      name: ep.podName,
+                                      namespace: ep.namespace || activeNamespace,
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-brand-300 hover:text-brand-200 text-[11px] font-mono transition-colors"
+                                >
+                                  Inspect Pod
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 5. Service Labels & Annotations */}
+              <MetadataLabelsAnnotations
+                labels={labels}
+                annotations={annotations}
+              />
+
+              {/* 6. Conditions (if any) */}
+              {conditions.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300 font-mono flex items-center space-x-2">
+                    <Activity className="w-4 h-4 text-indigo-400" />
+                    <span>Resource Status Conditions ({conditions.length})</span>
+                  </h3>
+                  <div className="bg-surface rounded-xl border border-border overflow-hidden divide-y divide-border/40 font-mono text-xs">
+                    {conditions.map((cond: any, cIdx: number) => (
+                      <div key={cIdx} className="p-3 flex items-center justify-between hover:bg-surface-elevated/40 transition-colors">
+                        <div className="flex items-center space-x-2">
+                          <span className={`w-2 h-2 rounded-full ${cond.status === 'True' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                          <span className="font-semibold text-gray-200">{cond.type}</span>
+                        </div>
+                        <div className="flex items-center space-x-3 text-[11px] text-gray-400">
+                          {cond.reason && <span>reason: {cond.reason}</span>}
+                          <span className={`px-2 py-0.5 rounded border ${
+                            cond.status === 'True'
+                              ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                              : 'bg-amber-950/60 text-amber-300 border-amber-800'
+                          }`}>
+                            {cond.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
                 /* Dynamic Resource Overview for Custom Resources (e.g. ExternalSecret, Ingress, Certificate, Service, etc.) */
                 <div className="space-y-6">
@@ -2715,157 +3417,426 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                 />
               </div>
             ) : activeTab === 'metrics' && (isPodOrWorkload || isNode) ? (
-          <div className="space-y-5">
-            {/* Telemetry 4-Grid Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* 1. CPU Usage Card */}
-              <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
-                      <Cpu className="w-4 h-4 text-pink-400" />
-                      <span>CPU Utilization</span>
+              <div className="space-y-5">
+                {/* Workload QoS, Quota & Scaled Cluster Footprint Banner */}
+                {isPodOrWorkload && (
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center space-x-2">
+                        <Scale className="w-4 h-4 text-brand-400" />
+                        <span className="text-xs font-bold text-gray-200 uppercase tracking-wider font-mono">
+                          Kubernetes Resource Quotas & Footprint
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold font-mono border ${
+                          (status?.qosClass || workloadResources.qosClass) === 'Guaranteed'
+                            ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                            : (status?.qosClass || workloadResources.qosClass) === 'Burstable'
+                              ? 'bg-blue-950/60 text-blue-300 border-blue-800'
+                              : 'bg-amber-950/60 text-amber-300 border-amber-800'
+                        }`}>
+                          QoS: {status?.qosClass || workloadResources.qosClass}
+                        </span>
+                        {(workloadResources.hasUncappedCpuLimit || workloadResources.hasUncappedMemoryLimit) && (
+                          <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-amber-950/50 text-amber-300 border border-amber-800/80 flex items-center space-x-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-400" />
+                            <span>Limits Uncapped</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <span className="text-xs font-mono font-bold text-pink-400">
-                      {latestCpu.toFixed(0)}m / 0.50 cores
-                    </span>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                      <div className="bg-[#0B0F17] p-2.5 rounded-lg border border-border/60">
+                        <span className="text-gray-500 text-[11px] block">Pod CPU Req / Lim</span>
+                        <span className="text-gray-200 font-semibold">
+                          <span className="text-emerald-400">{workloadResources.totalCpuRequestFormatted}</span> / <span className={workloadResources.hasUncappedCpuLimit ? 'text-amber-400' : 'text-cyan-400'}>{workloadResources.totalCpuLimitFormatted}</span>
+                        </span>
+                      </div>
+                      <div className="bg-[#0B0F17] p-2.5 rounded-lg border border-border/60">
+                        <span className="text-gray-500 text-[11px] block">Pod Mem Req / Lim</span>
+                        <span className="text-gray-200 font-semibold">
+                          <span className="text-emerald-400">{workloadResources.totalMemoryRequestFormatted}</span> / <span className={workloadResources.hasUncappedMemoryLimit ? 'text-amber-400' : 'text-cyan-400'}>{workloadResources.totalMemoryLimitFormatted}</span>
+                        </span>
+                      </div>
+                      <div className="bg-[#0B0F17] p-2.5 rounded-lg border border-border/60">
+                        <span className="text-gray-500 text-[11px] block">Scaled CPU ({workloadResources.replicas} {workloadResources.replicas === 1 ? 'pod' : 'pods'})</span>
+                        <span className="text-gray-200 font-semibold">
+                          {workloadResources.scaledCpuRequestFormatted} / {workloadResources.scaledCpuLimitFormatted}
+                        </span>
+                      </div>
+                      <div className="bg-[#0B0F17] p-2.5 rounded-lg border border-border/60">
+                        <span className="text-gray-500 text-[11px] block">Scaled Mem ({workloadResources.replicas} {workloadResources.replicas === 1 ? 'pod' : 'pods'})</span>
+                        <span className="text-gray-200 font-semibold">
+                          {workloadResources.scaledMemoryRequestFormatted} / {workloadResources.scaledMemoryLimitFormatted}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="w-full pt-1">
-                    {renderChartWithAxes(cpuHistory, '#ec4899', 'm', 100, (v) => `${v.toFixed(0)}m`)}
+                )}
+
+                {/* Telemetry 4-Grid Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 1. CPU Usage Card */}
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
+                        <Cpu className="w-4 h-4 text-pink-400" />
+                        <span>CPU Utilization</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-pink-400">
+                        {latestCpu.toFixed(0)}m / {workloadResources.totalCpuLimitFormatted}
+                      </span>
+                    </div>
+                    <div className="w-full pt-1">
+                      {renderChartWithAxes(cpuHistory, '#ec4899', 'm', 100, (v) => `${v.toFixed(0)}m`)}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
+                      <div>
+                        <span className="text-gray-500 block">Usage</span>
+                        <span className="text-gray-200 font-semibold">{latestCpu.toFixed(0)}m</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Request</span>
+                        <span className="text-emerald-400 font-semibold">{workloadResources.totalCpuRequestFormatted}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Limit</span>
+                        <span className={workloadResources.hasUncappedCpuLimit ? 'text-amber-400 font-semibold' : 'text-cyan-400 font-semibold'}>
+                          {workloadResources.totalCpuLimitFormatted}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
-                    <div>
-                      <span className="text-gray-500 block">Usage</span>
-                      <span className="text-gray-200 font-semibold">{latestCpu.toFixed(0)}m</span>
+
+                  {/* 2. Memory Usage Card */}
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
+                        <Database className="w-4 h-4 text-indigo-400" />
+                        <span>Memory Consumption (RSS)</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-indigo-400">
+                        {latestMem.toFixed(0)} MiB / {workloadResources.totalMemoryLimitFormatted}
+                      </span>
                     </div>
-                    <div>
-                      <span className="text-gray-500 block">Request</span>
-                      <span className="text-emerald-400 font-semibold">100m</span>
+                    <div className="w-full pt-1">
+                      {renderChartWithAxes(memHistory, '#6366f1', 'MiB', 500, (v) => `${v.toFixed(0)}M`)}
                     </div>
-                    <div>
-                      <span className="text-gray-500 block">Limit</span>
-                      <span className="text-cyan-400 font-semibold">500m</span>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
+                      <div>
+                        <span className="text-gray-500 block">Working Set</span>
+                        <span className="text-gray-200 font-semibold">{latestMem.toFixed(0)} MiB</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Request</span>
+                        <span className="text-emerald-400 font-semibold">{workloadResources.totalMemoryRequestFormatted}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Limit</span>
+                        <span className={workloadResources.hasUncappedMemoryLimit ? 'text-amber-400 font-semibold' : 'text-cyan-400 font-semibold'}>
+                          {workloadResources.totalMemoryLimitFormatted}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Network I/O Card */}
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
+                        <ArrowDownUp className="w-4 h-4 text-emerald-400" />
+                        <span>Network I/O Throughput</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-emerald-400">
+                        Rx: {latestNetRx.toFixed(0)} KB/s · Tx: {latestNetTx.toFixed(0)} KB/s
+                      </span>
+                    </div>
+                    <div className="w-full pt-1">
+                      {renderChartWithAxes(netRxHistory, '#10b981', 'KB/s', 300, (v) => `${v.toFixed(0)}K`)}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
+                      <div>
+                        <span className="text-gray-500 block">Rx Rate</span>
+                        <span className="text-emerald-300 font-semibold">{latestNetRx.toFixed(0)} KB/s</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Tx Rate</span>
+                        <span className="text-blue-300 font-semibold">{latestNetTx.toFixed(0)} KB/s</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Dropped</span>
+                        <span className="text-gray-200 font-semibold">0 pkts/s</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Disk & Storage Card */}
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
+                        <HardDrive className="w-4 h-4 text-amber-400" />
+                        <span>Disk & Ephemeral Storage</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold text-amber-400">
+                        {latestDisk} GiB / 10.0 GiB
+                      </span>
+                    </div>
+                    <div className="w-full pt-1">
+                      {renderChartWithAxes(diskHistory, '#f59e0b', 'GiB', 5.0, (v) => `${v.toFixed(1)}G`)}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
+                      <div>
+                        <span className="text-gray-500 block">Allocated</span>
+                        <span className="text-amber-300 font-semibold">{latestDisk} GiB</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block">Read/Write</span>
+                        <span className="text-gray-200 font-semibold">4.2 MB/s</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-200 font-semibold">IOPS</span>
+                        <span className="text-gray-200 font-semibold">120 ops</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. Memory Usage Card */}
-                <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
-                      <Database className="w-4 h-4 text-indigo-400" />
-                      <span>Memory Consumption (RSS)</span>
+                {/* Multi-container Breakdown Table (when workload has multiple containers) */}
+                {workloadResources.containers.length > 1 && (
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
+                    <h3 className="text-xs font-semibold text-gray-200 flex items-center space-x-2">
+                      <Box className="w-4 h-4 text-cyan-400" />
+                      <span>Per-Container Resource Allocation Breakdown ({workloadResources.containers.length})</span>
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-border/60 bg-[#0B0F17] text-gray-400 text-[11px]">
+                            <th className="py-2.5 px-3 font-semibold">Container</th>
+                            <th className="py-2.5 px-3 font-semibold">CPU Request</th>
+                            <th className="py-2.5 px-3 font-semibold">CPU Limit</th>
+                            <th className="py-2.5 px-3 font-semibold">Memory Request</th>
+                            <th className="py-2.5 px-3 font-semibold">Memory Limit</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40">
+                          {workloadResources.containers.map((c, cIdx) => (
+                            <tr key={cIdx} className="hover:bg-surface-elevated/40 transition-colors">
+                              <td className="py-2.5 px-3 font-medium text-gray-200 flex items-center space-x-2">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                <span>{c.name}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-emerald-400">{c.cpuRequestFormatted}</td>
+                              <td className="py-2.5 px-3">
+                                <span className={c.hasCpuLimit ? 'text-cyan-400' : 'text-amber-400 font-medium'}>
+                                  {c.cpuLimitFormatted}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-emerald-400">{c.memoryRequestFormatted}</td>
+                              <td className="py-2.5 px-3">
+                                <span className={c.hasMemoryLimit ? 'text-cyan-400' : 'text-amber-400 font-medium'}>
+                                  {c.memoryLimitFormatted}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    <span className="text-xs font-mono font-bold text-indigo-400">
-                      {latestMem.toFixed(0)} MiB / 1024 MiB
-                    </span>
                   </div>
-                  <div className="w-full pt-1">
-                    {renderChartWithAxes(memHistory, '#6366f1', 'MiB', 500, (v) => `${v.toFixed(0)}M`)}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
-                    <div>
-                      <span className="text-gray-500 block">Working Set</span>
-                      <span className="text-gray-200 font-semibold">{latestMem.toFixed(0)} MiB</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Request</span>
-                      <span className="text-emerald-400 font-semibold">128 MiB</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Limit</span>
-                      <span className="text-cyan-400 font-semibold">1024 MiB</span>
-                    </div>
-                  </div>
-                </div>
+                )}
 
-                {/* 3. Network I/O Card */}
+                {/* Status and Pod Events Highlights */}
                 <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
-                      <ArrowDownUp className="w-4 h-4 text-emerald-400" />
-                      <span>Network I/O Throughput</span>
+                  <h3 className="text-xs font-semibold text-gray-200 flex items-center space-x-2">
+                    <Activity className="w-4 h-4 text-indigo-400" />
+                    <span>Real-time Health & Lifecycle Status</span>
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
+                      <span className="text-gray-500 text-[11px] block">Readiness</span>
+                      <span className="text-emerald-400 font-semibold font-mono">1/1 Ready</span>
                     </div>
-                    <span className="text-xs font-mono font-bold text-emerald-400">
-                      Rx: {latestNetRx.toFixed(0)} KB/s · Tx: {latestNetTx.toFixed(0)} KB/s
-                    </span>
-                  </div>
-                  <div className="w-full pt-1">
-                    {renderChartWithAxes(netRxHistory, '#10b981', 'KB/s', 300, (v) => `${v.toFixed(0)}K`)}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
-                    <div>
-                      <span className="text-gray-500 block">Rx Rate</span>
-                      <span className="text-emerald-300 font-semibold">{latestNetRx.toFixed(0)} KB/s</span>
+                    <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
+                      <span className="text-gray-500 text-[11px] block">Restarts</span>
+                      <span className="text-gray-200 font-semibold font-mono">0</span>
                     </div>
-                    <div>
-                      <span className="text-gray-500 block">Tx Rate</span>
-                      <span className="text-blue-300 font-semibold">{latestNetTx.toFixed(0)} KB/s</span>
+                    <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
+                      <span className="text-gray-500 text-[11px] block">OOMKilled Risk</span>
+                      <span className={`font-semibold font-mono ${
+                        workloadResources.hasUncappedMemoryLimit
+                          ? 'text-amber-400'
+                          : latestMem > (workloadResources.totalMemoryLimit * 0.8)
+                            ? 'text-rose-400'
+                            : 'text-emerald-400'
+                      }`}>
+                        {workloadResources.hasUncappedMemoryLimit
+                          ? 'Uncapped (Node Bound)'
+                          : latestMem > (workloadResources.totalMemoryLimit * 0.8)
+                            ? 'High (> 80%)'
+                            : 'Low (< 30%)'}
+                      </span>
                     </div>
-                    <div>
-                      <span className="text-gray-500 block">Dropped</span>
-                      <span className="text-gray-200 font-semibold">0 pkts/s</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Disk & Storage Card */}
-                <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2 text-xs font-semibold text-gray-200">
-                      <HardDrive className="w-4 h-4 text-amber-400" />
-                      <span>Disk & Ephemeral Storage</span>
-                    </div>
-                    <span className="text-xs font-mono font-bold text-amber-400">
-                      {latestDisk} GiB / 10.0 GiB
-                    </span>
-                  </div>
-                  <div className="w-full pt-1">
-                    {renderChartWithAxes(diskHistory, '#f59e0b', 'GiB', 5.0, (v) => `${v.toFixed(1)}G`)}
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-border/50 text-[11px] font-mono text-gray-400">
-                    <div>
-                      <span className="text-gray-500 block">Allocated</span>
-                      <span className="text-amber-300 font-semibold">{latestDisk} GiB</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Read/Write</span>
-                      <span className="text-gray-200 font-semibold">4.2 MB/s</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-200 font-semibold">IOPS</span>
-                      <span className="text-gray-200 font-semibold">120 ops</span>
+                    <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
+                      <span className="text-gray-500 text-[11px] block">QoS Class</span>
+                      <span className="text-indigo-300 font-semibold font-mono">{status?.qosClass || workloadResources.qosClass}</span>
                     </div>
                   </div>
                 </div>
               </div>
+            ) : activeTab === 'events' ? (
+              <div className="space-y-4">
+                {/* Events Toolbar: Search, Filters & Counters */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface p-3 rounded-xl border border-border">
+                  {/* Search Bar */}
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Filter events by reason, message, source, or involved object…"
+                      value={eventFilter}
+                      onChange={(e) => setEventFilter(e.target.value)}
+                      className="w-full pl-9 pr-4 py-1.5 bg-[#0B0F17] rounded-lg border border-border/80 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand-500 font-mono"
+                    />
+                  </div>
 
-              {/* Status and Pod Events Highlights */}
-              <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
-                <h3 className="text-xs font-semibold text-gray-200 flex items-center space-x-2">
-                  <Activity className="w-4 h-4 text-indigo-400" />
-                  <span>Real-time Health & Lifecycle Status</span>
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
-                    <span className="text-gray-500 text-[11px] block">Readiness</span>
-                    <span className="text-emerald-400 font-semibold font-mono">1/1 Ready</span>
-                  </div>
-                  <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
-                    <span className="text-gray-500 text-[11px] block">Restarts</span>
-                    <span className="text-gray-200 font-semibold font-mono">0</span>
-                  </div>
-                  <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
-                    <span className="text-gray-500 text-[11px] block">OOMKilled Risk</span>
-                    <span className="text-emerald-400 font-semibold font-mono">Low (&lt; 30%)</span>
-                  </div>
-                  <div className="bg-surface-elevated p-2.5 rounded-lg border border-border/60">
-                    <span className="text-gray-500 text-[11px] block">QoS Class</span>
-                    <span className="text-indigo-300 font-semibold font-mono">{status?.qosClass || 'Burstable'}</span>
+                  {/* Severity Filter Toggle Buttons */}
+                  <div className="flex items-center space-x-1.5 bg-[#0B0F17] p-1 rounded-lg border border-border/80 text-xs font-mono">
+                    <button
+                      onClick={() => setEventSeverityFilter('all')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        eventSeverityFilter === 'all'
+                          ? 'bg-brand-500/20 text-brand-300 border border-brand-500/40'
+                          : 'text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      All ({resourceEvents.length})
+                    </button>
+                    <button
+                      onClick={() => setEventSeverityFilter('warning')}
+                      className={`px-2.5 py-1 rounded-md font-semibold flex items-center space-x-1.5 transition-all ${
+                        eventSeverityFilter === 'warning'
+                          ? 'bg-rose-950/60 text-rose-300 border border-rose-800/80'
+                          : 'text-gray-400 hover:text-rose-300'
+                      }`}
+                    >
+                      <AlertTriangle className={`w-3 h-3 ${warningEventsCount > 0 ? 'text-rose-400' : 'text-gray-500'}`} />
+                      <span>Warnings ({warningEventsCount})</span>
+                    </button>
+                    <button
+                      onClick={() => setEventSeverityFilter('normal')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition-all ${
+                        eventSeverityFilter === 'normal'
+                          ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-800/80'
+                          : 'text-gray-400 hover:text-emerald-300'
+                      }`}
+                    >
+                      Normal ({resourceEvents.length - warningEventsCount})
+                    </button>
                   </div>
                 </div>
+
+                {/* Loading State */}
+                {eventsLoading ? (
+                  <div className="p-12 flex flex-col items-center justify-center space-y-3 bg-surface rounded-xl border border-border">
+                    <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
+                    <span className="text-xs text-gray-400 font-mono">Fetching Kubernetes lifecycle events...</span>
+                  </div>
+                ) : filteredResourceEvents.length === 0 ? (
+                  /* Empty State */
+                  <div className="p-12 flex flex-col items-center justify-center space-y-3 bg-surface rounded-xl border border-border text-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-950/50 border border-emerald-800/60 flex items-center justify-center text-emerald-400">
+                      <CheckCircle2 className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-gray-200">No events recorded</h4>
+                      <p className="text-xs text-gray-400 max-w-sm">
+                        {eventFilter || eventSeverityFilter !== 'all'
+                          ? 'No events match the current filter criteria.'
+                          : `No recent Kubernetes events found for ${currentResource?.name || 'this resource'} in namespace ${activeNamespace}.`}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  /* Events Table / Timeline */
+                  <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-border/60 bg-[#0B0F17] text-gray-400 text-[11px]">
+                            <th className="py-2.5 px-3 font-semibold">Type</th>
+                            <th className="py-2.5 px-3 font-semibold">Reason</th>
+                            <th className="py-2.5 px-3 font-semibold">Involved Object</th>
+                            <th className="py-2.5 px-3 font-semibold">Message</th>
+                            <th className="py-2.5 px-3 font-semibold">Source</th>
+                            <th className="py-2.5 px-3 font-semibold">Count</th>
+                            <th className="py-2.5 px-3 font-semibold">Age</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border/40">
+                          {filteredResourceEvents.map((evt, idx) => {
+                            const isWarning = (evt.type || evt.eventType || '').toLowerCase() === 'warning';
+                            const involvedName = evt.involvedObject?.name || evt.involvedObjectName || '-';
+                            const involvedKind = evt.involvedObject?.kind || evt.involvedObjectKind || '';
+                            const count = evt.count || 1;
+                            const ageStr = evt.lastTimestamp || evt.eventTime || evt.firstTimestamp;
+                            const formattedAge = formatCreationDate(ageStr);
+
+                            return (
+                              <tr key={evt.uid || idx} className="hover:bg-surface-elevated/40 transition-colors">
+                                <td className="py-3 px-3 align-top whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border inline-flex items-center space-x-1 ${
+                                    isWarning
+                                      ? 'bg-rose-950/60 text-rose-300 border-rose-800'
+                                      : 'bg-emerald-950/60 text-emerald-300 border-emerald-800'
+                                  }`}>
+                                    {isWarning ? <AlertTriangle className="w-2.5 h-2.5 text-rose-400" /> : <Check className="w-2.5 h-2.5 text-emerald-400" />}
+                                    <span>{evt.type || 'Normal'}</span>
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 align-top whitespace-nowrap font-bold text-gray-200">
+                                  {evt.reason || 'Lifecycle'}
+                                </td>
+                                <td className="py-3 px-3 align-top whitespace-nowrap text-gray-300">
+                                  <div className="flex items-center space-x-1.5">
+                                    {involvedKind && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-elevated text-gray-400 border border-border/50">
+                                        {involvedKind}
+                                      </span>
+                                    )}
+                                    <span className="text-gray-200 font-medium">{involvedName}</span>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3 align-top text-gray-300 max-w-md lg:max-w-xl break-words leading-relaxed select-text">
+                                  {evt.message || '-'}
+                                </td>
+                                <td className="py-3 px-3 align-top whitespace-nowrap text-gray-400 text-[11px]">
+                                  {evt.source?.component || evt.source || evt.reportingComponent || '-'}
+                                </td>
+                                <td className="py-3 px-3 align-top whitespace-nowrap text-gray-300 text-[11px]">
+                                  {count > 1 ? (
+                                    <span className="px-1.5 py-0.5 rounded bg-brand-950/60 text-brand-300 border border-brand-800/80 font-bold">
+                                      {count}x
+                                    </span>
+                                  ) : (
+                                    '1x'
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 align-top whitespace-nowrap text-gray-400 text-[11px]" title={formattedAge?.full || ''}>
+                                  {formattedAge?.age || ageStr || '-'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ) : (
+            ) : (
             <div className="space-y-4">
               {/* Filter bar for raw YAML / events */}
               <div className="relative">

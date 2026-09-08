@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ScaleModal } from './ScaleModal';
 import { YamlEditorModal } from './YamlEditorModal';
@@ -107,6 +107,39 @@ describe('Comprehensive Modals and Interactive Actions Suite', () => {
 
     expect(await screen.findByText('app-backend-79d98-1')).toBeInTheDocument();
     expect(await screen.findByText(/Server started on port 8080/i)).toBeInTheDocument();
+  });
+
+  it('toggles previous container logs with Previous button and displays banner', async () => {
+    const handleClose = vi.fn();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LogsView
+          isActive={true}
+          onClose={handleClose}
+          resource={{ kind: 'Pod', name: 'app-backend-79d98-1', namespace: 'default' }}
+        />
+      </QueryClientProvider>
+    );
+
+    const previousBtn = await screen.findByRole('button', { name: /Show Previous Container Logs/i });
+    expect(previousBtn).toBeInTheDocument();
+
+    // Click to toggle previous logs
+    await act(async () => {
+      fireEvent.click(previousBtn);
+    });
+
+    // Banner should appear
+    expect(await screen.findByText(/previous terminated container/i)).toBeInTheDocument();
+
+    // Click return to current live logs
+    const returnBtn = screen.getByText(/Return to current live logs/i);
+    await act(async () => {
+      fireEvent.click(returnBtn);
+    });
+
+    // Banner should disappear
+    expect(screen.queryByText(/previous terminated container/i)).not.toBeInTheDocument();
   });
 
   it('renders PortForwardModal and allows configuring tunnel ports', async () => {

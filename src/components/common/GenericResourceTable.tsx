@@ -19,6 +19,7 @@ interface GenericResourceTableProps {
   selectedNamespaces: string[];
   namespaces: string[];
   isReadOnly?: boolean;
+  clusterId?: string;
   filterQuery?: string;
   onFilterQueryChange?: (query: string) => void;
   onSelectNamespaces: (namespaces: string[]) => void;
@@ -36,6 +37,7 @@ const columnHelper = createColumnHelper<any>();
 
 export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   kind,
+  clusterId,
   selectedNamespaces,
   namespaces,
   isReadOnly = false,
@@ -89,14 +91,15 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   const isClusterScoped = CLUSTER_SCOPED_KINDS.includes(kind.toLowerCase());
 
   const { data: rawResources = [], isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ['resources', kind, isClusterScoped ? 'cluster' : selectedNamespaces],
+    queryKey: ['resources', clusterId || 'active', kind, isClusterScoped ? 'cluster' : selectedNamespaces],
     queryFn: () =>
       api.listResources(
         kind,
         !isClusterScoped && selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined
       ),
-    retry: process.env.NODE_ENV === 'test' ? false : 2,
-    refetchInterval: process.env.NODE_ENV === 'test' ? false : 5000,
+    retry: process.env.NODE_ENV === 'test' ? false : 1,
+    staleTime: 15_000,
+    refetchInterval: process.env.NODE_ENV === 'test' ? false : 8000,
   });
 
   const resources = useMemo(() => {
@@ -370,8 +373,51 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
       );
     } else if (['events', 'event'].includes(k)) {
       cols.push(
-        columnHelper.accessor('reason', { header: 'Reason', cell: (info) => <span className="text-xs font-semibold text-gray-200">{info.getValue() || '-'}</span> }),
-        columnHelper.accessor('message', { header: 'Message', cell: (info) => <span className="text-xs text-gray-300 max-w-md truncate block">{info.getValue() || '-'}</span> })
+        columnHelper.accessor('type', {
+          header: 'Type',
+          cell: (info) => {
+            const val = String(info.getValue() || info.row.original.eventType || 'Normal');
+            const isWarning = val.toLowerCase() === 'warning';
+            return (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono font-medium border ${
+                  isWarning
+                    ? 'bg-rose-950/70 text-rose-300 border-rose-800'
+                    : 'bg-emerald-950/70 text-emerald-300 border-emerald-800'
+                }`}
+              >
+                {val}
+              </span>
+            );
+          },
+        }),
+        columnHelper.accessor('reason', {
+          header: 'Reason',
+          cell: (info) => <span className="text-xs font-semibold text-gray-200 font-mono">{info.getValue() || '-'}</span>,
+        }),
+        columnHelper.accessor('involvedObject', {
+          header: 'Involved Object',
+          cell: (info) => {
+            const val = info.getValue() || info.row.original.involvedObjectName || '-';
+            return (
+              <span className="text-xs font-mono text-cyan-300 truncate max-w-[200px] block" title={String(val)}>
+                {String(val)}
+              </span>
+            );
+          },
+        }),
+        columnHelper.accessor('count', {
+          header: 'Count',
+          cell: (info) => <span className="text-xs font-mono text-gray-400">x{info.getValue() || 1}</span>,
+        }),
+        columnHelper.accessor('message', {
+          header: 'Message',
+          cell: (info) => (
+            <span className="text-xs text-gray-300 max-w-lg truncate block" title={info.getValue() || ''}>
+              {info.getValue() || '-'}
+            </span>
+          ),
+        })
       );
     } else {
       // Dynamic column detection for Custom Resources (e.g. certificates, targetgroupbindings, scaledobjects, etc.)
