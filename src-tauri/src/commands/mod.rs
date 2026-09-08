@@ -1698,11 +1698,15 @@ pub async fn open_log_file() -> Result<ApiResponse<String>, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd").args(&["/C", "start", "", &path_str]).spawn();
+        let _ = std::process::Command::new("cmd")
+            .args(&["/C", "start", "", &path_str])
+            .spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("xdg-open").arg(&path_str).spawn();
+        let _ = std::process::Command::new("xdg-open")
+            .arg(&path_str)
+            .spawn();
     }
     Ok(ApiResponse::ok(path_str))
 }
@@ -1718,11 +1722,15 @@ pub async fn open_logs_dir() -> Result<ApiResponse<String>, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("explorer").arg(&parent_str).spawn();
+        let _ = std::process::Command::new("explorer")
+            .arg(&parent_str)
+            .spawn();
     }
     #[cfg(target_os = "linux")]
     {
-        let _ = std::process::Command::new("xdg-open").arg(&parent_str).spawn();
+        let _ = std::process::Command::new("xdg-open")
+            .arg(&parent_str)
+            .spawn();
     }
     Ok(ApiResponse::ok(parent_str))
 }
@@ -1732,7 +1740,9 @@ pub async fn get_backend_logs(limit: Option<usize>) -> Result<ApiResponse<Vec<St
     let max_lines = limit.unwrap_or(200);
     let path = crate::get_log_file_path();
     if !path.exists() {
-        return Ok(ApiResponse::ok(vec!["[INFO] Log file not yet created.".to_string()]));
+        return Ok(ApiResponse::ok(vec![
+            "[INFO] Log file not yet created.".to_string()
+        ]));
     }
     match std::fs::read_to_string(&path) {
         Ok(content) => {

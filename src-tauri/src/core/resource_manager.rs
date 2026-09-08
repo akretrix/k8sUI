@@ -1297,8 +1297,14 @@ impl GenericResourceManager {
                             .unwrap_or("-");
 
                         let io = item.data.get("involvedObject");
-                        let io_kind = io.and_then(|o| o.get("kind")).and_then(|v| v.as_str()).unwrap_or("-");
-                        let io_name = io.and_then(|o| o.get("name")).and_then(|v| v.as_str()).unwrap_or("-");
+                        let io_kind = io
+                            .and_then(|o| o.get("kind"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-");
+                        let io_name = io
+                            .and_then(|o| o.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("-");
 
                         obj["eventType"] = json!(event_type);
                         obj["type"] = json!(event_type);
@@ -1488,7 +1494,8 @@ impl GenericResourceManager {
         let api = self.get_api(&resource, &caps, namespace);
 
         let lp = ListParams::default();
-        let list_res = tokio::time::timeout(std::time::Duration::from_secs(10), api.list(&lp)).await;
+        let list_res =
+            tokio::time::timeout(std::time::Duration::from_secs(10), api.list(&lp)).await;
         let items = match list_res {
             Ok(Ok(list)) => list.items,
             Ok(Err(e)) => return Err(ConnectorError::KubeError(e)),
@@ -1523,14 +1530,42 @@ impl GenericResourceManager {
                     return None;
                 }
 
-                let event_type = item.data.get("type").and_then(|t| t.as_str()).unwrap_or("Normal");
-                let reason = item.data.get("reason").and_then(|r| r.as_str()).unwrap_or("-");
-                let message = item.data.get("message").and_then(|m| m.as_str()).unwrap_or("-");
+                let event_type = item
+                    .data
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("Normal");
+                let reason = item
+                    .data
+                    .get("reason")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("-");
+                let message = item
+                    .data
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("-");
                 let count = item.data.get("count").and_then(|v| v.as_i64()).unwrap_or(1);
-                let source = item.data.get("source").and_then(|s| s.get("component")).and_then(|v| v.as_str()).unwrap_or("-");
-                let first_ts = item.data.get("firstTimestamp").and_then(|v| v.as_str()).unwrap_or("");
-                let last_ts = item.data.get("lastTimestamp").and_then(|v| v.as_str()).unwrap_or("");
-                let creation = item.creation_timestamp().map(|t| t.0.to_rfc3339()).unwrap_or_default();
+                let source = item
+                    .data
+                    .get("source")
+                    .and_then(|s| s.get("component"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("-");
+                let first_ts = item
+                    .data
+                    .get("firstTimestamp")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let last_ts = item
+                    .data
+                    .get("lastTimestamp")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let creation = item
+                    .creation_timestamp()
+                    .map(|t| t.0.to_rfc3339())
+                    .unwrap_or_default();
                 let age = if let Some(ts) = item.creation_timestamp() {
                     let dur = chrono::Utc::now().signed_duration_since(ts.0);
                     if dur.num_days() > 0 {
@@ -1681,7 +1716,9 @@ impl GenericResourceManager {
 
         let secret = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
             .await
-            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s")))?
+            .map_err(|_| {
+                ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s"))
+            })?
             .map_err(ConnectorError::KubeError)?;
 
         let secret_type = secret.type_.unwrap_or_else(|| "Opaque".to_string());
@@ -1739,7 +1776,9 @@ impl GenericResourceManager {
 
         let mut secret = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
             .await
-            .map_err(|_| ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s")))?
+            .map_err(|_| {
+                ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s"))
+            })?
             .map_err(ConnectorError::KubeError)?;
 
         if is_plaintext {
