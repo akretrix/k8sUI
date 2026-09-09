@@ -5,6 +5,7 @@ import {
   WrapText,
   Clock,
   RotateCcw,
+  Loader2,
 } from 'lucide-react';
 import { api, isTauri } from '../../api/tauriClient';
 import { PodSummary } from '../../types/cluster';
@@ -63,6 +64,8 @@ export const LogsView: React.FC<LogsViewProps> = ({
   const [timestamps, setTimestamps] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wrapLines, setWrapLines] = useState(true);
+  const [tailLines, setTailLines] = useState<number | null>(1000);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
@@ -150,15 +153,18 @@ export const LogsView: React.FC<LogsViewProps> = ({
     setIsFollowing(true);
     setFilterOnlyMatches(false);
     setLogLevel('all');
+    setTailLines(1000);
   }, [resource?.name]);
 
   // 3. Fetch logs based on pod and container selection
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (customTail?: number | null) => {
     if (!resourceName || isFetchingRef.current) return;
     isFetchingRef.current = true;
+    const effectiveTail = customTail !== undefined ? customTail : tailLines;
     try {
       if (isWorkload && selectedPodName === 'all' && matchingPods.length > 0) {
         // Multi-pod aggregated logs
+        const perPodTail = effectiveTail === null ? null : Math.max(300, Math.floor(effectiveTail / 3));
         const results = await Promise.all(
           matchingPods.slice(0, 3).map(async (pod) => {
             try {
@@ -166,7 +172,7 @@ export const LogsView: React.FC<LogsViewProps> = ({
                 container: container !== 'all' ? container : undefined,
                 previous,
                 timestamps,
-                tailLines: 150,
+                tailLines: perPodTail,
               });
               return text
                 .split('\n')
@@ -196,7 +202,7 @@ export const LogsView: React.FC<LogsViewProps> = ({
           container: container !== 'all' ? container : undefined,
           previous,
           timestamps,
-          tailLines: 300,
+          tailLines: effectiveTail,
         });
         const newLogs = text.length ? text.split('\n') : ['(no output)'];
         setLogs((prev) => {
@@ -215,7 +221,48 @@ export const LogsView: React.FC<LogsViewProps> = ({
     } finally {
       isFetchingRef.current = false;
     }
-  }, [namespace, resourceName, isWorkload, selectedPodName, matchingPods, container, previous, timestamps]);
+  }, [namespace, resourceName, isWorkload, selectedPodName, matchingPods, container, previous, timestamps, tailLines]);
+
+  const handleLoadMore = async (increment: number) => {
+    if (isLoadingMore) return;
+    setIsLoadingMore(true);
+    setIsFollowing(false);
+    const prevScrollHeight = terminalRef.current?.scrollHeight || 0;
+    const prevScrollTop = terminalRef.current?.scrollTop || 0;
+    const newTail = (tailLines ?? 1000) + increment;
+    setTailLines(newTail);
+    try {
+      await fetchLogs(newTail);
+      requestAnimationFrame(() => {
+        if (terminalRef.current) {
+          const heightDiff = terminalRef.current.scrollHeight - prevScrollHeight;
+          terminalRef.current.scrollTop = prevScrollTop + heightDiff;
+        }
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const handleLoadAll = async () => {
+    if (isLoadingMore) return;
+    setIsLoadingMore(true);
+    setIsFollowing(false);
+    const prevScrollHeight = terminalRef.current?.scrollHeight || 0;
+    const prevScrollTop = terminalRef.current?.scrollTop || 0;
+    setTailLines(null);
+    try {
+      await fetchLogs(null);
+      requestAnimationFrame(() => {
+        if (terminalRef.current) {
+          const heightDiff = terminalRef.current.scrollHeight - prevScrollHeight;
+          terminalRef.current.scrollTop = prevScrollTop + heightDiff;
+        }
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (!isActive || !resource) {
@@ -385,6 +432,31 @@ export const LogsView: React.FC<LogsViewProps> = ({
             {isFollowing ? 'Live' : 'Paused'}
           </button>
 
+          {/* Tail Lines Selector */}
+          <select
+            value={tailLines === null ? 'all' : String(tailLines)}
+            onChange={(e) => {
+              const val = e.target.value === 'all' ? null : Number(e.target.value);
+              setTailLines(val);
+              if (val === null) {
+                setIsFollowing(false);
+              }
+            }}
+            className="bg-surface-elevated border border-border text-xs text-gray-200 rounded-md px-2 py-1 outline-none cursor-pointer font-mono"
+            title="Number of log lines to retrieve from tail"
+            aria-label="Tail lines"
+          >
+            {tailLines !== null && ![500, 1000, 2500, 5000, 10000].includes(tailLines) && (
+              <option value={String(tailLines)}>{tailLines.toLocaleString()} lines</option>
+            )}
+            <option value="500">500 lines</option>
+            <option value="1000">1,000 lines</option>
+            <option value="2500">2,500 lines</option>
+            <option value="5000">5,000 lines</option>
+            <option value="10000">10,000 lines</option>
+            <option value="all">All logs (Full)</option>
+          </select>
+
           <button
             onClick={() => {
               const next = !previous;
@@ -452,23 +524,47 @@ export const LogsView: React.FC<LogsViewProps> = ({
 
       {/* Previous Logs Notice Banner */}
       {previous && (
-        <div className="px-4 py-1.5 bg-amber-950/40 border-b border-amber-800/60 flex items-center justify-between text-xs font-mono text-amber-300 shrink-0">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            <span>
-              Showing logs from <strong>previous terminated container</strong> (<code>--previous</code>).
+        <div className="px-4 py-1.5 bg-amber-950/40 border-b border-amber-800/60 flex items-center justify-between gap-3 text-xs font-mono text-amber-300 shrink-0">
+          <div className="flex items-center space-x-2 min-w-0 truncate">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+            <span className="truncate">
+              Showing logs from <strong>previous terminated container</strong> (<code>--previous</code>)
+              {tailLines !== null ? ` — Tail: ${tailLines.toLocaleString()} lines` : ' — Full container log'}.
             </span>
           </div>
-          <button
-            onClick={() => {
-              setPrevious(false);
-              setLogs([]);
-              setIsFollowing(true);
-            }}
-            className="text-[11px] underline hover:text-amber-200 text-amber-400 cursor-pointer"
-          >
-            Return to current live logs
-          </button>
+          <div className="flex items-center space-x-2 shrink-0">
+            {tailLines !== null && (
+              <button
+                onClick={() => handleLoadMore(2000)}
+                disabled={isLoadingMore}
+                className="px-2 py-0.5 rounded bg-amber-900/60 hover:bg-amber-800 border border-amber-700/80 text-amber-200 text-[11px] font-mono transition-colors cursor-pointer flex items-center space-x-1"
+                title="Fetch 2,000 more earlier lines from terminated container"
+              >
+                {isLoadingMore && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                <span>+2,000 lines</span>
+              </button>
+            )}
+            {tailLines !== null && (
+              <button
+                onClick={() => handleLoadAll()}
+                disabled={isLoadingMore}
+                className="px-2 py-0.5 rounded bg-amber-900/40 hover:bg-amber-800/60 border border-amber-700/60 text-amber-300 text-[11px] font-mono transition-colors cursor-pointer"
+                title="Fetch all available logs from terminated container"
+              >
+                <span>Load all logs</span>
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setPrevious(false);
+                setLogs([]);
+                setIsFollowing(true);
+              }}
+              className="text-[11px] underline hover:text-amber-200 text-amber-400 cursor-pointer pl-1"
+            >
+              Return to current live logs
+            </button>
+          </div>
         </div>
       )}
 
@@ -522,6 +618,55 @@ export const LogsView: React.FC<LogsViewProps> = ({
         onScroll={handleScroll}
         className="flex-1 p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300"
       >
+        {/* Terminal Area Top Notice / Expansion Controls */}
+        {!error && logs.length > 0 && (
+          <div className="mb-3">
+            {tailLines !== null ? (
+              <div className="p-2 rounded-md bg-surface-elevated/70 border border-border/80 flex items-center justify-between gap-3 text-xs text-gray-400 font-mono">
+                <div className="flex items-center space-x-2 text-gray-300">
+                  <span className="text-gray-500">⬆</span>
+                  <span>
+                    Showing last <strong>{logs.length.toLocaleString()}</strong> lines (tail limit: {tailLines.toLocaleString()}).
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => handleLoadMore(1000)}
+                    disabled={isLoadingMore}
+                    className="px-2.5 py-1 rounded bg-brand-900/60 hover:bg-brand-800 border border-brand-700 text-brand-200 text-xs font-mono transition-colors cursor-pointer flex items-center space-x-1"
+                    title="Fetch 1,000 more earlier lines"
+                  >
+                    {isLoadingMore && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>+1,000 earlier lines</span>
+                  </button>
+                  <button
+                    onClick={() => handleLoadAll()}
+                    disabled={isLoadingMore}
+                    className="px-2.5 py-1 rounded bg-surface hover:bg-surface-hover border border-border text-gray-200 text-xs font-mono transition-colors cursor-pointer"
+                    title="Fetch all available logs from container start"
+                  >
+                    <span>Load all logs</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="px-3 py-1.5 rounded-md bg-surface-elevated/40 border border-border/40 flex items-center justify-between text-xs text-gray-400 font-mono">
+                <span className="text-gray-400">
+                  Showing <strong>all available logs</strong> ({logs.length.toLocaleString()} lines from container start).
+                </span>
+                <button
+                  onClick={() => {
+                    setTailLines(1000);
+                  }}
+                  className="text-[11px] text-gray-400 hover:text-gray-200 underline cursor-pointer"
+                >
+                  Reset to 1,000 lines
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {error ? (
           <div className="p-3 bg-rose-950/30 border border-rose-900/60 rounded-lg flex items-start justify-between gap-3 text-xs font-mono">
             <div className="space-y-1">

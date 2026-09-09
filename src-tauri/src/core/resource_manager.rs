@@ -1440,7 +1440,10 @@ impl GenericResourceManager {
         let api: Api<Pod> = Api::namespaced(self.client.clone(), namespace);
         let params = kube::api::LogParams {
             container: container.map(|c| c.to_string()),
-            tail_lines: Some(tail_lines.unwrap_or(1000)),
+            tail_lines: match tail_lines {
+                Some(n) if n > 0 => Some(n),
+                _ => None,
+            },
             previous,
             timestamps,
             ..Default::default()

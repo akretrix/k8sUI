@@ -1153,6 +1153,19 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
     case 'toggle_devtools':
       return true;
 
+    case 'get_logs': {
+      const podName = args.podName || 'pod';
+      const count = args.tailLines === null ? 100 : (args.tailLines || 50);
+      const lines = [];
+      for (let i = 1; i <= Math.min(count, 50); i++) {
+        lines.push(`2026-09-09T09:00:00Z [INFO] [${podName}] Container active event #${i} processing payload.`);
+      }
+      return lines.join('\n');
+    }
+
+    case 'list_containers':
+      return ['main', 'sidecar'];
+
     default:
       throw new Error(`Mock for command ${cmd} not implemented`);
   }
@@ -1249,13 +1262,13 @@ export const api = {
   getLogs: (
     namespace: string,
     podName: string,
-    opts: { container?: string; tailLines?: number; previous?: boolean; timestamps?: boolean } = {}
+    opts: { container?: string; tailLines?: number | null; previous?: boolean; timestamps?: boolean } = {}
   ) =>
     invokeTauri<string>('get_logs', {
       namespace,
       podName,
       container: opts.container,
-      tailLines: opts.tailLines ?? 1000,
+      tailLines: opts.tailLines === null ? null : (opts.tailLines ?? 1000),
       previous: opts.previous ?? false,
       timestamps: opts.timestamps ?? false,
     }),

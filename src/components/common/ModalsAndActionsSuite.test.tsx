@@ -7,6 +7,7 @@ import { PortForwardModal } from '../portforward/PortForwardModal';
 import { AuditLogModal } from '../audit/AuditLogModal';
 import { CommandPalette } from '../command-palette/CommandPalette';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { api } from '../../api/tauriClient';
 
 // Mock Tauri API client
 vi.mock('../../api/tauriClient', () => ({
@@ -140,6 +141,78 @@ describe('Comprehensive Modals and Interactive Actions Suite', () => {
 
     // Banner should disappear
     expect(screen.queryByText(/previous terminated container/i)).not.toBeInTheDocument();
+  });
+
+  it('allows changing tail lines and loading more/all logs in LogsView', async () => {
+    const handleClose = vi.fn();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <LogsView
+          isActive={true}
+          onClose={handleClose}
+          resource={{ kind: 'Pod', name: 'app-backend-79d98-1', namespace: 'default' }}
+        />
+      </QueryClientProvider>
+    );
+
+    // Initial fetch should occur with default 1000 lines
+    expect(await screen.findByText('app-backend-79d98-1')).toBeInTheDocument();
+    expect(api.getLogs).toHaveBeenCalledWith(
+      'default',
+      'app-backend-79d98-1',
+      expect.objectContaining({ tailLines: 1000 })
+    );
+
+    // Change tail lines selector to 5000 lines
+    const linesSelect = screen.getByLabelText(/Tail lines/i);
+    await act(async () => {
+      fireEvent.change(linesSelect, { target: { value: '5000' } });
+    });
+    expect(api.getLogs).toHaveBeenCalledWith(
+      'default',
+      'app-backend-79d98-1',
+      expect.objectContaining({ tailLines: 5000 })
+    );
+
+    // Click "+1,000 earlier lines" in the terminal top bar
+    const loadEarlierBtn = screen.getByRole('button', { name: /\+1,000 earlier lines/i });
+    await act(async () => {
+      fireEvent.click(loadEarlierBtn);
+    });
+    expect(api.getLogs).toHaveBeenCalledWith(
+      'default',
+      'app-backend-79d98-1',
+      expect.objectContaining({ tailLines: 6000 })
+    );
+
+    // Toggle previous logs
+    const previousBtn = screen.getByRole('button', { name: /Show Previous Container Logs/i });
+    await act(async () => {
+      fireEvent.click(previousBtn);
+    });
+    expect(await screen.findByText(/previous terminated container/i)).toBeInTheDocument();
+
+    // In previous banner, click "+2,000 lines"
+    const loadMorePreviousBtn = screen.getByRole('button', { name: /\+2,000 lines/i });
+    await act(async () => {
+      fireEvent.click(loadMorePreviousBtn);
+    });
+    expect(api.getLogs).toHaveBeenCalledWith(
+      'default',
+      'app-backend-79d98-1',
+      expect.objectContaining({ previous: true, tailLines: 8000 })
+    );
+
+    // In previous banner, click "Load all logs"
+    const loadAllPreviousBtn = screen.getAllByRole('button', { name: /Load all logs/i })[0];
+    await act(async () => {
+      fireEvent.click(loadAllPreviousBtn);
+    });
+    expect(api.getLogs).toHaveBeenCalledWith(
+      'default',
+      'app-backend-79d98-1',
+      expect.objectContaining({ previous: true, tailLines: null })
+    );
   });
 
   it('renders PortForwardModal and allows configuring tunnel ports', async () => {
