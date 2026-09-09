@@ -170,20 +170,21 @@ pub fn run() {
             if id == "check-updates" {
                 let _ = app.emit("trigger-check-updates", ());
             } else if id == "open-logs" {
-                let path = get_log_file_path();
                 #[cfg(target_os = "macos")]
                 {
+                    let path = get_log_file_path();
                     let _ = std::process::Command::new("open").arg(&path).spawn();
                 }
                 #[cfg(target_os = "windows")]
                 {
+                    let path = get_log_file_path();
                     let _ = std::process::Command::new("explorer").arg(&path).spawn();
                 }
                 #[cfg(target_os = "linux")]
                 {
+                    let path = get_log_file_path();
                     let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
                 }
-                let _ = path;
             } else if id == "toggle-devtools" {
                 if let Some(window) = app.get_webview_window("main") {
                     if window.is_devtools_open() {
