@@ -1269,6 +1269,45 @@ pub async fn get_secret_data(
 }
 
 #[tauri::command]
+pub async fn get_secret_yaml_decoded(
+    name: String,
+    namespace: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<String>, String> {
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr
+        .get_secret_yaml_decoded(&name, namespace.as_deref())
+        .await
+    {
+        Ok(res) => {
+            let cluster_id = state
+                .session
+                .get_active_summary()
+                .await
+                .map(|s| s.id)
+                .unwrap_or_else(|| "unknown".to_string());
+            state
+                .audit
+                .log(
+                    &cluster_id,
+                    "cluster",
+                    "get_secret_yaml_decoded",
+                    &format!("{}/{}", namespace.as_deref().unwrap_or("default"), name),
+                    "desktop-ui",
+                    None,
+                    "success",
+                )
+                .await;
+            Ok(ApiResponse::ok(res))
+        }
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
 pub async fn update_secret_data(
     name: String,
     namespace: Option<String>,

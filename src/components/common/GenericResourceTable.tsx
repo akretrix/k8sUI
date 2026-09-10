@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   createColumnHelper,
@@ -7,9 +7,10 @@ import {
   getFilteredRowModel,
   getSortedRowModel,
   useReactTable,
+  RowSelectionState,
 } from '@tanstack/react-table';
 import { api } from '../../api/tauriClient';
-import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box } from 'lucide-react';
+import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw } from 'lucide-react';
 import { NamespaceMultiSelect } from './NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { HelmInstallModal } from '../helm/HelmInstallModal';
@@ -26,6 +27,8 @@ interface GenericResourceTableProps {
   onDescribe: (resource: any) => void;
   onViewYaml: (resource: any) => void;
   onDelete: (resource: any) => void;
+  onBatchDelete?: (resources: any[]) => void;
+  onBatchRestart?: (resources: any[]) => void;
   onLogs?: (resource: any) => void;
   onRestart?: (resource: any) => void;
   onScale?: (resource: any) => void;
@@ -53,6 +56,8 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   onDescribe,
   onViewYaml,
   onDelete,
+  onBatchDelete,
+  onBatchRestart,
   onLogs,
   onRestart,
   onScale,
@@ -66,10 +71,16 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   onSsoLogin,
 }) => {
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('');
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [isInstallingHelm, setIsInstallingHelm] = useState(false);
   const isHelm = ['helm', 'helmrelease', 'helm-releases', 'helmreleases'].includes(kind.toLowerCase());
   const globalFilter = externalGlobalFilter !== undefined ? externalGlobalFilter : internalGlobalFilter;
   const setGlobalFilter = onFilterQueryChange || setInternalGlobalFilter;
+
+  // Reset row selection when switching kind or namespaces
+  useEffect(() => {
+    setRowSelection({});
+  }, [kind, selectedNamespaces]);
 
   // Column Visibility state initialized with localStorage
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
@@ -109,6 +120,7 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
         kind,
         !isClusterScoped && selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined
       ),
+    placeholderData: (previousData) => previousData,
     retry: process.env.NODE_ENV === 'test' ? false : 1,
     staleTime: 15_000,
     refetchInterval: process.env.NODE_ENV === 'test' ? false : 8000,
@@ -116,15 +128,55 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
 
   const resources = useMemo(() => {
     const list = Array.isArray(rawResources) ? rawResources : [];
-    if (isClusterScoped || selectedNamespaces.length <= 1) return list;
+    if (isClusterScoped || selectedNamespaces.length === 0) return list;
     return list.filter((r: any) => {
       const rNs = (r && r.namespace) || 'default';
       return selectedNamespaces.some((s) => s.toLowerCase() === rNs.toLowerCase());
     });
   }, [rawResources, selectedNamespaces, isClusterScoped]);
 
+  const sample = useMemo(() => {
+    return Array.isArray(rawResources) && rawResources.length > 0 ? rawResources[0] : null;
+  }, [rawResources]);
+
+  const sampleKeySig = useMemo(() => {
+    return sample ? Object.keys(sample).sort().join(',') : '';
+  }, [sample]);
+
   const columns = useMemo(() => {
     const cols: any[] = [
+      columnHelper.display({
+        id: 'select',
+        header: ({ table }) => (
+          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={table.getIsAllPageRowsSelected()}
+              ref={(input) => {
+                if (input) {
+                  input.indeterminate =
+                    !table.getIsAllPageRowsSelected() && table.getIsSomePageRowsSelected();
+                }
+              }}
+              onChange={table.getToggleAllPageRowsSelectedHandler()}
+              className="w-3.5 h-3.5 rounded border-gray-600 bg-surface-elevated text-brand-500 focus:ring-brand-500/20 cursor-pointer accent-brand-500"
+              aria-label="Select all rows"
+            />
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={row.getIsSelected()}
+              disabled={!row.getCanSelect()}
+              onChange={row.getToggleSelectedHandler()}
+              className="w-3.5 h-3.5 rounded border-gray-600 bg-surface-elevated text-brand-500 focus:ring-brand-500/20 cursor-pointer accent-brand-500"
+              aria-label={`Select ${row.original?.name || 'row'}`}
+            />
+          </div>
+        ),
+      }),
       columnHelper.accessor('name', {
         header: 'Name',
         cell: (info) => (
@@ -783,7 +835,7 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   }, [
     kind,
     isClusterScoped,
-    rawResources,
+    sampleKeySig,
     onDescribe,
     onScale,
     onRestart,
@@ -810,32 +862,43 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   const table = useReactTable({
     data: resources,
     columns,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     state: {
       globalFilter,
       columnVisibility,
+      rowSelection,
     },
+    enableRowSelection: true,
+    onRowSelectionChange: setRowSelection,
+    getRowId: (row, index) => `${row.namespace || 'cluster'}/${row.name || index}`,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
   });
 
+  const selectedRows = useMemo(() => {
+    return table.getSelectedRowModel().rows.map((r) => r.original);
+  }, [table, rowSelection]);
+
   const colDefs: ColumnDefinition[] = useMemo(() => {
-    return table.getAllLeafColumns().map((col) => {
-      const headerVal = col.columnDef.header;
-      const label = typeof headerVal === 'string' ? headerVal : col.id;
-      return {
-        id: col.id,
-        label: label.charAt(0).toUpperCase() + label.slice(1),
-        visible: col.getIsVisible(),
-        locked: col.id === 'name',
-      };
-    });
+    return table
+      .getAllLeafColumns()
+      .filter((col) => col.id !== 'select')
+      .map((col) => {
+        const headerVal = col.columnDef.header;
+        const label = typeof headerVal === 'string' ? headerVal : col.id;
+        return {
+          id: col.id,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+          visible: col.getIsVisible(),
+          locked: col.id === 'name',
+        };
+      });
   }, [table, columns, columnVisibility]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-surface">
+    <div className="flex-1 flex flex-col min-h-0 bg-surface relative">
       {/* Toolbar */}
       <div className="h-12 border-b border-border flex items-center px-4 justify-between shrink-0 bg-surface-elevated/50">
         <div className="flex items-center space-x-3 flex-1">
@@ -901,38 +964,58 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto relative">
         <table className="min-w-full divide-y divide-border relative">
           <thead className="bg-surface sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    className="px-4 py-2.5 text-left text-[11px] font-semibold text-gray-400 uppercase tracking-wider select-none cursor-pointer hover:text-gray-200 transition-colors"
-                    onClick={header.column.getToggleSortingHandler()}
-                  >
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const isSelectCol = header.id === 'select';
+                  return (
+                    <th
+                      key={header.id}
+                      className={`py-2.5 text-left text-[11px] font-semibold text-gray-400 select-none ${
+                        isSelectCol
+                          ? 'w-10 px-3 text-center cursor-default'
+                          : 'px-4 uppercase tracking-wider cursor-pointer hover:text-gray-200 transition-colors'
+                      }`}
+                      onClick={isSelectCol ? undefined : header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
           <tbody className="divide-y divide-border/50 bg-background">
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                onClick={() => onDescribe(row.original)}
-                className="hover:bg-surface-elevated/40 transition-colors group cursor-pointer"
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-2 whitespace-nowrap">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {isLoading ? (
+            {table.getRowModel().rows.map((row) => {
+              const isSelected = row.getIsSelected();
+              return (
+                <tr
+                  key={row.id}
+                  onClick={() => onDescribe(row.original)}
+                  className={`transition-colors group cursor-pointer ${
+                    isSelected ? 'bg-brand-500/15 hover:bg-brand-500/20' : 'hover:bg-surface-elevated/40'
+                  }`}
+                >
+                  {row.getVisibleCells().map((cell) => {
+                    const isSelectCol = cell.column.id === 'select';
+                    return (
+                      <td
+                        key={cell.id}
+                        className={`py-2 whitespace-nowrap ${
+                          isSelectCol ? 'w-10 px-3 text-center' : 'px-4'
+                        }`}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {isLoading && resources.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-16 text-center text-sm text-gray-400">
                   <div className="flex flex-col items-center justify-center space-y-3">
@@ -1071,6 +1154,66 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
           </tbody>
         </table>
       </div>
+ 
+       {/* Floating Batch Action Bar */}
+       {selectedRows.length > 0 && (
+         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-fit max-w-xl bg-surface-elevated/95 backdrop-blur-md border border-brand-500/40 rounded-xl shadow-2xl px-4 py-2.5 flex items-center space-x-3 z-30 animate-in slide-in-from-bottom-2 duration-150">
+           <div className="flex items-center space-x-2 text-xs text-gray-200">
+             <span className="bg-brand-500/25 text-brand-300 font-mono font-semibold px-2 py-0.5 rounded-full text-[11px] border border-brand-500/40">
+               {selectedRows.length}
+             </span>
+             <span className="font-medium">
+               {selectedRows.length === 1 ? kind.replace(/s$/, '') : kind} selected
+             </span>
+           </div>
+ 
+           <div className="h-4 w-px bg-border" />
+ 
+           <div className="flex items-center space-x-2">
+             {['deployments', 'statefulsets', 'daemonsets'].includes(kind.toLowerCase()) && onBatchRestart && (
+               <button
+                 type="button"
+                 onClick={() => onBatchRestart(selectedRows)}
+                 disabled={isReadOnly}
+                 className={`px-3 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all shadow-sm ${
+                   isReadOnly
+                     ? 'bg-amber-950/20 text-gray-500 border border-border cursor-not-allowed'
+                     : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white border border-amber-500/50'
+                 }`}
+                 title={isReadOnly ? 'Read-Only Mode' : `Restart ${selectedRows.length} ${kind}`}
+               >
+                 <RotateCcw className="w-3.5 h-3.5" />
+                 <span>Restart Selected ({selectedRows.length})</span>
+               </button>
+             )}
+ 
+             {onBatchDelete && (
+               <button
+                 type="button"
+                 onClick={() => onBatchDelete(selectedRows)}
+                 disabled={isReadOnly}
+                 className={`px-3 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all shadow-sm ${
+                   isReadOnly
+                     ? 'bg-rose-950/20 text-gray-500 border border-border cursor-not-allowed'
+                     : 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white border border-rose-500/50'
+                 }`}
+                 title={isReadOnly ? 'Read-Only Mode' : `Delete ${selectedRows.length} ${kind}`}
+               >
+                 <Trash2 className="w-3.5 h-3.5" />
+                 <span>Delete Selected ({selectedRows.length})</span>
+               </button>
+             )}
+ 
+             <button
+               type="button"
+               onClick={() => setRowSelection({})}
+               className="px-2.5 py-1 rounded-md text-xs text-gray-400 hover:text-gray-200 hover:bg-surface transition-colors"
+             >
+               Clear
+             </button>
+           </div>
+         </div>
+       )}
 
       {/* Helm Install Release Modal */}
       {isHelm && (

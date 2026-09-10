@@ -979,6 +979,22 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
         ],
       };
 
+    case 'get_secret_yaml_decoded':
+      return [
+        'apiVersion: v1',
+        'kind: Secret',
+        'metadata:',
+        `  name: ${args.name}`,
+        `  namespace: ${args.namespace || 'default'}`,
+        '  creationTimestamp: "2026-03-01T12:00:00Z"',
+        'type: Opaque',
+        'stringData:',
+        '  DATABASE_URL: postgresql://app_user@10.0.0.1:5432/acme',
+        '  JWT_SECRET: super-secure-jwt-signing-key-production-2026',
+        '  AWS_ACCESS_KEY_ID: AKIAIOSFODNN7EXAMPLE',
+        '  AWS_SECRET_ACCESS_KEY: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+      ].join('\n');
+
     case 'update_secret_data':
       return {
         name: args.name,
@@ -1310,6 +1326,8 @@ export const api = {
     invokeTauri<ClusterOverviewData>('get_cluster_overview'),
   getSecretData: (name: string, namespace?: string) =>
     invokeTauri<SecretDetails>('get_secret_data', { name, namespace }),
+  getSecretYamlDecoded: (name: string, namespace?: string) =>
+    invokeTauri<string>('get_secret_yaml_decoded', { name, namespace }),
   updateSecretData: (
     name: string,
     namespace: string | undefined,

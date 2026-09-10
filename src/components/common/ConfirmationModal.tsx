@@ -11,6 +11,12 @@ export type ConfirmationActionType =
   | 'resume_job'
   | 'rerun_job';
 
+export interface BatchTargetItem {
+  name: string;
+  namespace?: string;
+  kind?: string;
+}
+
 export interface ConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -21,6 +27,7 @@ export interface ConfirmationModalProps {
   namespace?: string;
   clusterName?: string;
   isReadOnly?: boolean;
+  batchItems?: BatchTargetItem[];
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
@@ -33,6 +40,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   namespace,
   clusterName,
   isReadOnly = false,
+  batchItems,
 }) => {
   const [typedName, setTypedName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,19 +49,23 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isBatch = Boolean(batchItems && batchItems.length > 0);
   const isDelete = actionType === 'delete';
   const isTrigger = actionType === 'trigger_job';
   const isRerun = actionType === 'rerun_job';
   const isSuspend = actionType === 'suspend_cronjob' || actionType === 'suspend_job';
   const isResume = actionType === 'resume_cronjob' || actionType === 'resume_job';
   const requiresTypeToConfirm = isDelete; // Require typing name only on destructive delete
+  const expectedConfirmationText = isBatch && isDelete ? 'delete' : resourceName;
 
   const getActionTitle = () => {
+    const count = isBatch ? batchItems!.length : 1;
+    const kindLabel = isBatch ? `${count} ${resourceKind}` : resourceKind;
     switch (actionType) {
       case 'delete':
-        return `Delete ${resourceKind}`;
+        return `Delete ${kindLabel}`;
       case 'restart':
-        return `Restart ${resourceKind}`;
+        return `Restart ${kindLabel}`;
       case 'trigger_job':
         return `Trigger Run: ${resourceKind}`;
       case 'rerun_job':
@@ -95,6 +107,13 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 
   const getActionDescription = () => {
     if (isDelete) {
+      if (isBatch) {
+        return (
+          <span>
+            Are you sure you want to permanently delete <b className="select-text">{batchItems!.length} {resourceKind}</b>? This action cannot be undone and will permanently terminate all selected resources.
+          </span>
+        );
+      }
       return (
         <span>
           Are you sure you want to delete <b className="select-text">{resourceKind}/{resourceName}</b>? This action cannot be undone and will terminate all underlying pods.
@@ -129,6 +148,13 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         </span>
       );
     }
+    if (isBatch) {
+      return (
+        <span>
+          Are you sure you want to perform a rolling rollout restart on <b className="select-text">{batchItems!.length} {resourceKind}</b>? This will trigger a recreation of all active pods for each selected workload.
+        </span>
+      );
+    }
     return (
       <span>
         Are you sure you want to perform a rolling rollout restart on <b className="select-text">{resourceKind}/{resourceName}</b>? This will trigger a graceful recreation of all active pods.
@@ -143,8 +169,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   };
 
   const handleAutoFill = () => {
-    setTypedName(resourceName);
-    navigator.clipboard.writeText(resourceName);
+    setTypedName(expectedConfirmationText);
+    navigator.clipboard.writeText(expectedConfirmationText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -154,8 +180,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
       setError('Cannot execute mutations in Read-Only mode. Please unlock write mode first.');
       return;
     }
-    if (requiresTypeToConfirm && typedName !== resourceName) {
-      setError(`Please type "${resourceName}" to confirm deletion.`);
+    if (requiresTypeToConfirm && typedName.trim().toLowerCase() !== expectedConfirmationText.toLowerCase()) {
+      setError(`Please type "${expectedConfirmationText}" to confirm.`);
       return;
     }
     try {
@@ -203,40 +229,82 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             </div>
           </div>
 
-          <div className="bg-surface rounded-lg p-3 border border-border text-xs space-y-1.5 font-mono select-text">
-            <div className="flex items-center justify-between text-gray-400">
-              <span>Resource:</span>
-              <div className="flex items-center space-x-1.5 min-w-0">
-                <span className="text-gray-200 font-semibold truncate select-text">{resourceKind}/{resourceName}</span>
+          {isBatch ? (
+            <div className="bg-surface rounded-lg p-3 border border-border text-xs space-y-2 select-text">
+              <div className="flex items-center justify-between text-gray-400 font-mono">
+                <span className="font-semibold text-gray-300">Selected Items ({batchItems!.length}):</span>
                 <button
                   type="button"
-                  onClick={handleCopyName}
-                  className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-white transition-colors"
-                  title="Copy resource name to clipboard"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      batchItems!.map((b) => (b.namespace ? `${b.namespace}/${b.name}` : b.name)).join('\n')
+                    );
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-white transition-colors flex items-center space-x-1 text-[11px]"
+                  title="Copy list to clipboard"
                 >
                   {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copied ? 'Copied' : 'Copy All'}</span>
                 </button>
               </div>
+              <div className="max-h-36 overflow-y-auto divide-y divide-border/40 font-mono text-xs border border-border/50 rounded bg-background/50 p-1.5 space-y-0.5">
+                {batchItems!.map((item, idx) => (
+                  <div
+                    key={`${item.namespace || 'all'}-${item.name}-${idx}`}
+                    className="py-1 px-1.5 flex items-center justify-between hover:bg-surface-elevated/40 rounded"
+                  >
+                    <span className="text-gray-200 truncate font-medium">{item.name}</span>
+                    {item.namespace && (
+                      <span className="text-gray-500 text-[11px] ml-2 shrink-0">{item.namespace}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {clusterName && (
+                <div className="flex justify-between text-gray-400 font-mono pt-1">
+                  <span>Target Cluster:</span>
+                  <span className="text-gray-200 select-text">{clusterName}</span>
+                </div>
+              )}
             </div>
-            {namespace && (
-              <div className="flex justify-between text-gray-400">
-                <span>Namespace:</span>
-                <span className="text-gray-200 select-text">{namespace}</span>
+          ) : (
+            <div className="bg-surface rounded-lg p-3 border border-border text-xs space-y-1.5 font-mono select-text">
+              <div className="flex items-center justify-between text-gray-400">
+                <span>Resource:</span>
+                <div className="flex items-center space-x-1.5 min-w-0">
+                  <span className="text-gray-200 font-semibold truncate select-text">{resourceKind}/{resourceName}</span>
+                  <button
+                    type="button"
+                    onClick={handleCopyName}
+                    className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-white transition-colors"
+                    title="Copy resource name to clipboard"
+                  >
+                    {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
               </div>
-            )}
-            {clusterName && (
-              <div className="flex justify-between text-gray-400">
-                <span>Target Cluster:</span>
-                <span className="text-gray-200 select-text">{clusterName}</span>
-              </div>
-            )}
-          </div>
+              {namespace && (
+                <div className="flex justify-between text-gray-400">
+                  <span>Namespace:</span>
+                  <span className="text-gray-200 select-text">{namespace}</span>
+                </div>
+              )}
+              {clusterName && (
+                <div className="flex justify-between text-gray-400">
+                  <span>Target Cluster:</span>
+                  <span className="text-gray-200 select-text">{clusterName}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {requiresTypeToConfirm && (
             <div className="space-y-2 select-text">
               <div className="flex items-center justify-between text-xs">
                 <label htmlFor="confirm-name" className="text-gray-300 font-medium select-text">
-                  Type <span className="font-mono text-red-400 font-bold select-all">{resourceName}</span> to confirm:
+                  Type <span className="font-mono text-red-400 font-bold select-all">{expectedConfirmationText}</span> to confirm:
                 </label>
                 <button
                   type="button"
@@ -252,7 +320,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                 autoFocus
                 value={typedName}
                 onChange={(e) => setTypedName(e.target.value)}
-                placeholder={resourceName}
+                placeholder={expectedConfirmationText}
                 className="w-full px-3 py-2 bg-surface border border-border rounded-lg text-xs font-mono text-gray-100 placeholder-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors select-text"
               />
             </div>
@@ -279,7 +347,11 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={isSubmitting || (requiresTypeToConfirm && typedName !== resourceName)}
+            disabled={
+              isSubmitting ||
+              (requiresTypeToConfirm &&
+                typedName.trim().toLowerCase() !== expectedConfirmationText.toLowerCase())
+            }
             className={`px-4 py-1.5 rounded-md text-xs font-medium text-white shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
               isDelete
                 ? 'bg-red-600 hover:bg-red-500 active:bg-red-700'
@@ -298,7 +370,9 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             ) : (
               <span>
                 {isDelete
-                  ? 'Confirm Delete'
+                  ? isBatch
+                    ? `Confirm Delete (${batchItems!.length})`
+                    : 'Confirm Delete'
                   : isTrigger
                   ? 'Run Job Now'
                   : isRerun
@@ -307,6 +381,8 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                   ? 'Confirm Suspend'
                   : isResume
                   ? 'Confirm Resume'
+                  : isBatch
+                  ? `Confirm Restart (${batchItems!.length})`
                   : 'Confirm Restart'}
               </span>
             )}

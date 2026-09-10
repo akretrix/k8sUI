@@ -46,8 +46,11 @@ import {
   Play,
   Pause,
   Briefcase,
+  Unlock,
+  Lock,
+  Download,
 } from 'lucide-react';
-import { load as yamlLoad } from 'js-yaml';
+import { load as yamlLoad, dump as yamlDump } from 'js-yaml';
 import { api, SecretDetails, HelmReleaseDetails, PodSummary } from '../../api/tauriClient';
 import { HelmUpgradeModal } from '../helm/HelmUpgradeModal';
 import { MetadataLabelsAnnotations } from './MetadataLabelsAnnotations';
@@ -138,7 +141,7 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'metadata' | 'metrics' | 'events' | 'describe' | 'values' | 'history' | 'notes' | 'manifest'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'metadata' | 'metrics' | 'events' | 'describe' | 'values' | 'history' | 'notes' | 'manifest' | 'decoded_yaml'>('overview');
   const [rawFilter, setRawFilter] = useState('');
   const [resourceEvents, setResourceEvents] = useState<any[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -158,6 +161,11 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const [savingSecret, setSavingSecret] = useState(false);
   const [secretSaveError, setSecretSaveError] = useState<string | null>(null);
   const [copiedSecretKey, setCopiedSecretKey] = useState<string | null>(null);
+  const [decodedSecretYaml, setDecodedSecretYaml] = useState<string | null>(null);
+  const [decodedSecretLoading, setDecodedSecretLoading] = useState(false);
+  const [secretYamlMode, setSecretYamlMode] = useState<'decoded' | 'raw'>('decoded');
+  const [expandedSecretKeys, setExpandedSecretKeys] = useState<Record<string, boolean>>({});
+  const [copiedDecodedYaml, setCopiedDecodedYaml] = useState(false);
 
   // Helm inspection & modification state
   const [helmDetails, setHelmDetails] = useState<HelmReleaseDetails | null>(null);
@@ -213,6 +221,8 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
       setContent('');
       setError(null);
       setSecretDetails(null);
+      setDecodedSecretYaml(null);
+      setExpandedSecretKeys({});
       setHelmDetails(null);
       setNodePods([]);
       setServiceEndpoints([]);
@@ -230,13 +240,25 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
     const isSec = ['secret', 'secrets'].includes((currentResource.kind || '').toLowerCase());
     if (isSec) {
       setSecretLoading(true);
+      setDecodedSecretLoading(true);
       api
         .getSecretData(currentResource.name, currentResource.namespace)
         .then(setSecretDetails)
         .catch((e) => console.error('Failed to get secret details:', e))
         .finally(() => setSecretLoading(false));
+
+      if (typeof api.getSecretYamlDecoded === 'function') {
+        api
+          .getSecretYamlDecoded(currentResource.name, currentResource.namespace)
+          .then(setDecodedSecretYaml)
+          .catch((e) => console.warn('Failed to get decoded secret YAML via backend:', e))
+          .finally(() => setDecodedSecretLoading(false));
+      } else {
+        setDecodedSecretLoading(false);
+      }
     } else {
       setSecretDetails(null);
+      setDecodedSecretYaml(null);
     }
 
     const isHelm = ['helm', 'helmrelease', 'helm-releases', 'helmreleases'].includes((currentResource.kind || '').toLowerCase());
@@ -508,6 +530,7 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const isService = !isHelmRelease && !isNode && ['service', 'services'].includes(normalizedKind);
   const isCronJob = ['cronjob', 'cronjobs', 'cj'].includes(normalizedKind);
   const isJob = !isCronJob && ['job', 'jobs'].includes(normalizedKind);
+  const isSecret = ['secret', 'secrets'].includes(normalizedKind);
   const isSuspended = !!(parsedData?.spec?.suspend ?? currentResource?.suspend);
   const isPodOrWorkload = !isHelmRelease && !isNode && !isService && !isCronJob && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
   const hasLogs = !isHelmRelease && !isNode && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
@@ -571,6 +594,83 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
 
   const toggleRevealSecret = (key: string) => {
     setRevealedSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const computedDecodedSecretYaml = useMemo(() => {
+    if (decodedSecretYaml) return decodedSecretYaml;
+    if (!secretDetails && !parsedData) return '';
+    try {
+      const stringData: Record<string, string> = {};
+      if (secretDetails?.entries) {
+        secretDetails.entries.forEach((e) => {
+          stringData[e.key] = e.is_binary ? `<binary data: ${e.value.length} bytes>` : e.value;
+        });
+      }
+      const doc = {
+        apiVersion: parsedData?.apiVersion || 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: currentResource?.name,
+          namespace: currentResource?.namespace,
+          labels: metadata?.labels || parsedData?.metadata?.labels,
+          annotations: metadata?.annotations || parsedData?.metadata?.annotations,
+          creationTimestamp: metadata?.creationTimestamp || parsedData?.metadata?.creationTimestamp,
+        },
+        type: secretDetails?.secret_type || parsedData?.type || 'Opaque',
+        stringData,
+      };
+      return yamlDump(doc, { indent: 2, lineWidth: -1 });
+    } catch {
+      return '';
+    }
+  }, [decodedSecretYaml, secretDetails, parsedData, currentResource, metadata]);
+
+  const computedRawSecretYaml = useMemo(() => {
+    if (!secretDetails && !parsedData) return content;
+    try {
+      const data: Record<string, string> = {};
+      if (secretDetails?.entries) {
+        secretDetails.entries.forEach((e) => {
+          data[e.key] = e.base64;
+        });
+      }
+      const doc = {
+        apiVersion: parsedData?.apiVersion || 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: currentResource?.name,
+          namespace: currentResource?.namespace,
+          labels: metadata?.labels || parsedData?.metadata?.labels,
+          annotations: metadata?.annotations || parsedData?.metadata?.annotations,
+          creationTimestamp: metadata?.creationTimestamp || parsedData?.metadata?.creationTimestamp,
+        },
+        type: secretDetails?.secret_type || parsedData?.type || 'Opaque',
+        data,
+      };
+      return yamlDump(doc, { indent: 2, lineWidth: -1 });
+    } catch {
+      return content;
+    }
+  }, [secretDetails, parsedData, currentResource, metadata, content]);
+
+  const getSecretKeyTypeBadge = (key: string) => {
+    const lower = key.toLowerCase();
+    if (lower.endsWith('.yaml') || lower.endsWith('.yml')) {
+      return <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-300 border border-blue-800/80 font-bold uppercase tracking-wider font-mono">YAML</span>;
+    }
+    if (lower.endsWith('.json')) {
+      return <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/80 font-bold uppercase tracking-wider font-mono">JSON</span>;
+    }
+    if (lower.endsWith('.crt') || lower.endsWith('.pem') || lower.endsWith('.key') || lower.endsWith('.cert')) {
+      return <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/80 font-bold uppercase tracking-wider font-mono">CERT</span>;
+    }
+    if (lower.endsWith('.env') || lower.startsWith('.env') || lower.includes('env')) {
+      return <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 font-bold uppercase tracking-wider font-mono">ENV</span>;
+    }
+    if (lower.endsWith('.conf') || lower.endsWith('.cfg') || lower.endsWith('.properties') || lower.endsWith('.ini')) {
+      return <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 font-bold uppercase tracking-wider font-mono">CONF</span>;
+    }
+    return null;
   };
 
   const renderChartWithAxes = (
@@ -1178,6 +1278,23 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                     : 'Resource Overview'}
                 </span>
               </button>
+              {isSecret && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('decoded_yaml')}
+                  className={`flex items-center space-x-2 text-xs font-semibold h-full border-b-2 transition-colors ${
+                    activeTab === 'decoded_yaml'
+                      ? 'border-emerald-500 text-emerald-300'
+                      : 'border-transparent text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Decoded YAML</span>
+                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 font-bold">
+                    Plaintext
+                  </span>
+                </button>
+              )}
               <button
                 onClick={() => setActiveTab('metadata')}
                 className={`flex items-center space-x-2 text-xs font-semibold h-full border-b-2 transition-colors ${
@@ -1546,6 +1663,16 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                       </h3>
 
                       <div className="flex items-center space-x-2">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('decoded_yaml')}
+                          className="px-2.5 py-1 rounded bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-700/80 text-emerald-200 hover:text-white text-xs font-mono flex items-center space-x-1.5 transition-colors shadow-sm"
+                          title="View full Secret manifest with all values decoded into clean YAML"
+                        >
+                          <Unlock className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>View Full Decoded YAML</span>
+                        </button>
+
                         {(secretDetails?.entries || []).length > 0 && (
                           <button
                             onClick={() => {
@@ -1626,76 +1753,119 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                       <div className="bg-surface rounded-xl border border-border/80 divide-y divide-border/40 overflow-hidden font-mono text-xs shadow-sm">
                         {(secretDetails?.entries || []).map((entry) => {
                           const isRevealed = revealedSecrets[entry.key];
+                          const isExpanded = !!expandedSecretKeys[entry.key];
                           const isKeyCopied = copiedSecretKey === `key-${entry.key}`;
                           const isValCopied = copiedSecretKey === `val-${entry.key}`;
                           const isB64Copied = copiedSecretKey === `b64-${entry.key}`;
+                          const isMultiline = entry.value.includes('\n') || entry.value.length > 45;
 
                           return (
-                            <div key={entry.key} className="p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5 hover:bg-surface-elevated/40 transition-colors select-text">
-                              <div className="flex items-center space-x-2 min-w-0">
-                                <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                                <span className="font-bold text-gray-200 text-xs truncate select-text">{entry.key}</span>
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-elevated text-gray-400 shrink-0">
-                                  {entry.value.length} bytes
-                                </span>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(entry.key);
-                                    setCopiedSecretKey(`key-${entry.key}`);
-                                    setTimeout(() => setCopiedSecretKey(null), 2000);
-                                  }}
-                                  className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
-                                  title="Copy Key Name"
-                                >
-                                  {isKeyCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                </button>
+                            <div key={entry.key} className="p-3.5 flex flex-col gap-2 hover:bg-surface-elevated/40 transition-colors select-text">
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+                                <div className="flex items-center space-x-2 min-w-0 flex-wrap gap-y-1">
+                                  <Key className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  <span className="font-bold text-gray-200 text-xs truncate select-text">{entry.key}</span>
+                                  {getSecretKeyTypeBadge(entry.key)}
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-surface-elevated text-gray-400 shrink-0">
+                                    {entry.value.length} bytes
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(entry.key);
+                                      setCopiedSecretKey(`key-${entry.key}`);
+                                      setTimeout(() => setCopiedSecretKey(null), 2000);
+                                    }}
+                                    className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-surface-elevated transition-colors"
+                                    title="Copy Key Name"
+                                  >
+                                    {isKeyCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+
+                                <div className="flex items-center space-x-2 shrink-0">
+                                  {isRevealed ? (
+                                    <span className="text-amber-200 text-xs font-mono bg-amber-950/80 px-2.5 py-1 rounded border border-amber-800 select-all max-w-xs md:max-w-md truncate">
+                                      {entry.value}
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-500 text-xs font-mono bg-[#0B0F17] px-2.5 py-1 rounded border border-border/40 tracking-widest select-none">
+                                      ••••••••••••••••
+                                    </span>
+                                  )}
+
+                                  {isMultiline && isRevealed && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedSecretKeys((prev) => ({ ...prev, [entry.key]: !prev[entry.key] }))}
+                                      className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-cyan-300 hover:text-white text-[11px] flex items-center space-x-1 transition-colors"
+                                      title={isExpanded ? 'Collapse view' : 'Expand full decoded content'}
+                                    >
+                                      {isExpanded ? <ChevronDown className="w-3 h-3 text-cyan-400" /> : <ChevronRight className="w-3 h-3 text-cyan-400" />}
+                                      <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => toggleRevealSecret(entry.key)}
+                                    className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-[11px] flex items-center space-x-1 transition-colors"
+                                    title={isRevealed ? 'Hide value' : 'Reveal plaintext value'}
+                                  >
+                                    {isRevealed ? <EyeOff className="w-3 h-3 text-gray-400" /> : <Eye className="w-3 h-3 text-amber-400" />}
+                                    <span>{isRevealed ? 'Hide' : 'Reveal'}</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(entry.value);
+                                      setCopiedSecretKey(`val-${entry.key}`);
+                                      setTimeout(() => setCopiedSecretKey(null), 2000);
+                                    }}
+                                    className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-[11px] flex items-center space-x-1 transition-colors"
+                                    title="Copy Plaintext Value"
+                                  >
+                                    {isValCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                    <span>Copy</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(entry.base64);
+                                      setCopiedSecretKey(`b64-${entry.key}`);
+                                      setTimeout(() => setCopiedSecretKey(null), 2000);
+                                    }}
+                                    className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-400 hover:text-gray-200 text-[11px] font-mono transition-colors"
+                                    title="Copy Base64 Encoded Value"
+                                  >
+                                    {isB64Copied ? <Check className="w-3 h-3 text-emerald-400" /> : 'Base64'}
+                                  </button>
+                                </div>
                               </div>
 
-                              <div className="flex items-center space-x-2 shrink-0">
-                                {isRevealed ? (
-                                  <span className="text-amber-200 text-xs font-mono bg-amber-950/80 px-2.5 py-1 rounded border border-amber-800 select-all max-w-xs md:max-w-md truncate">
+                              {isExpanded && isRevealed && (
+                                <div className="mt-1 p-3 rounded-lg bg-[#0B0F17] border border-border/70 font-mono text-xs overflow-x-auto space-y-2 select-text">
+                                  <div className="flex items-center justify-between text-[11px] text-gray-400 pb-1 border-b border-border/40">
+                                    <span className="font-semibold text-emerald-400 flex items-center space-x-1.5">
+                                      <Code2 className="w-3 h-3" />
+                                      <span>Decoded Content ({entry.key})</span>
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(entry.value);
+                                        setCopiedSecretKey(`val-${entry.key}`);
+                                        setTimeout(() => setCopiedSecretKey(null), 2000);
+                                      }}
+                                      className="text-gray-400 hover:text-white flex items-center space-x-1 text-[11px]"
+                                    >
+                                      {isValCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                      <span>{isValCopied ? 'Copied' : 'Copy'}</span>
+                                    </button>
+                                  </div>
+                                  <pre className="text-gray-200 whitespace-pre-wrap leading-relaxed select-text font-mono text-[11px] max-h-96 overflow-y-auto">
                                     {entry.value}
-                                  </span>
-                                ) : (
-                                  <span className="text-gray-500 text-xs font-mono bg-[#0B0F17] px-2.5 py-1 rounded border border-border/40 tracking-widest select-none">
-                                    ••••••••••••••••
-                                  </span>
-                                )}
-
-                                <button
-                                  onClick={() => toggleRevealSecret(entry.key)}
-                                  className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-[11px] flex items-center space-x-1 transition-colors"
-                                  title={isRevealed ? 'Hide value' : 'Reveal plaintext value'}
-                                >
-                                  {isRevealed ? <EyeOff className="w-3 h-3 text-gray-400" /> : <Eye className="w-3 h-3 text-amber-400" />}
-                                  <span>{isRevealed ? 'Hide' : 'Reveal'}</span>
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(entry.value);
-                                    setCopiedSecretKey(`val-${entry.key}`);
-                                    setTimeout(() => setCopiedSecretKey(null), 2000);
-                                  }}
-                                  className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-[11px] flex items-center space-x-1 transition-colors"
-                                  title="Copy Plaintext Value"
-                                >
-                                  {isValCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                                  <span>Copy</span>
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(entry.base64);
-                                    setCopiedSecretKey(`b64-${entry.key}`);
-                                    setTimeout(() => setCopiedSecretKey(null), 2000);
-                                  }}
-                                  className="px-2 py-1 rounded bg-surface-elevated hover:bg-surface-hover border border-border text-gray-400 hover:text-gray-200 text-[11px] font-mono transition-colors"
-                                  title="Copy Base64 Encoded Value"
-                                >
-                                  {isB64Copied ? <Check className="w-3 h-3 text-emerald-400" /> : 'Base64'}
-                                </button>
-                              </div>
+                                  </pre>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -3702,6 +3872,145 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                   )}
                 </div>
               )
+            ) : activeTab === 'decoded_yaml' && isSecret ? (
+              <div className="space-y-4">
+                {/* Decoded YAML Header Toolbar */}
+                <div className="bg-surface rounded-xl border border-border p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                      <Unlock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-gray-200 font-mono flex items-center space-x-2">
+                        <span>Secret Decoded Manifest</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-normal">
+                          {secretYamlMode === 'decoded' ? 'Decoded stringData' : 'Raw Base64 data'}
+                        </span>
+                      </h3>
+                      <p className="text-[11px] text-gray-400">
+                        {secretYamlMode === 'decoded'
+                          ? 'All base64 secret data keys have been completely decoded into human-readable plaintext strings.'
+                          : 'Viewing raw standard Kubernetes base64 encoded secret data.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+                    {/* Toggle between Decoded (stringData) and Raw (data base64) */}
+                    <div className="bg-surface-elevated p-0.5 rounded-lg border border-border flex items-center text-xs font-mono">
+                      <button
+                        type="button"
+                        onClick={() => setSecretYamlMode('decoded')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center space-x-1.5 ${
+                          secretYamlMode === 'decoded'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                      >
+                        <Unlock className="w-3 h-3" />
+                        <span>Decoded (Plaintext)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSecretYamlMode('raw')}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center space-x-1.5 ${
+                          secretYamlMode === 'raw'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>Raw (Base64)</span>
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetText = secretYamlMode === 'decoded' ? computedDecodedSecretYaml : computedRawSecretYaml;
+                        navigator.clipboard.writeText(targetText);
+                        setCopiedDecodedYaml(true);
+                        setTimeout(() => setCopiedDecodedYaml(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-xs font-mono flex items-center space-x-1.5 transition-colors"
+                      title="Copy Full YAML to Clipboard"
+                    >
+                      {copiedDecodedYaml ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
+                      <span>{copiedDecodedYaml ? 'Copied!' : 'Copy YAML'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetText = secretYamlMode === 'decoded' ? computedDecodedSecretYaml : computedRawSecretYaml;
+                        const filename = `${currentResource.name}-${secretYamlMode}.yaml`;
+                        const blob = new Blob([targetText], { type: 'text/yaml' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-surface-elevated hover:bg-surface-hover border border-border text-gray-300 hover:text-white text-xs font-mono flex items-center space-x-1.5 transition-colors"
+                      title="Download YAML File"
+                    >
+                      <Download className="w-3.5 h-3.5 text-gray-400" />
+                      <span>Download</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Search */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search / filter YAML lines…"
+                    value={rawFilter}
+                    onChange={(e) => setRawFilter(e.target.value)}
+                    className="w-full pl-9 pr-4 py-1.5 bg-surface rounded-lg border border-border text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand-500 font-mono"
+                  />
+                </div>
+
+                {/* YAML Content Viewer */}
+                {decodedSecretLoading ? (
+                  <div className="p-12 flex flex-col items-center justify-center space-y-3 bg-surface rounded-xl border border-border text-center">
+                    <Loader2 className="w-6 h-6 text-emerald-400 animate-spin" />
+                    <span className="text-xs text-gray-400 font-mono">Decoding Secret YAML values…</span>
+                  </div>
+                ) : (
+                  <div className="bg-[#0B0F17] rounded-xl border border-border/80 p-4 font-mono text-xs text-gray-200 overflow-x-auto shadow-inner">
+                    <pre className="whitespace-pre-wrap leading-relaxed select-text font-mono text-[12px]">
+                      {(secretYamlMode === 'decoded' ? computedDecodedSecretYaml : computedRawSecretYaml)
+                        .split('\n')
+                        .filter((line) => !rawFilter || line.toLowerCase().includes(rawFilter.toLowerCase()))
+                        .map((line, idx) => {
+                          const isComment = line.trim().startsWith('#');
+                          const isKey = /^\s*[\w.-]+:/.test(line);
+                          return (
+                            <div key={idx} className="hover:bg-surface-elevated/30 px-1 rounded flex">
+                              <span className="w-10 text-gray-600 select-none text-right pr-3 shrink-0 font-mono text-[11px]">
+                                {idx + 1}
+                              </span>
+                              <span
+                                className={`flex-1 break-all ${
+                                  isComment
+                                    ? 'text-gray-500 italic'
+                                    : isKey
+                                    ? 'text-emerald-400/90'
+                                    : 'text-gray-300'
+                                }`}
+                              >
+                                {line}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </pre>
+                  </div>
+                )}
+              </div>
             ) : activeTab === 'metadata' ? (
               <div className="space-y-6">
                 <MetadataLabelsAnnotations
@@ -4133,6 +4442,23 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
               </div>
             ) : (
             <div className="space-y-4">
+              {isSecret && (
+                <div className="p-3 bg-emerald-950/40 border border-emerald-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs font-mono">
+                  <div className="flex items-center space-x-2 text-emerald-300">
+                    <Unlock className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Viewing raw manifest. Want to see all YAML keys decoded into human-readable plaintext?</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('decoded_yaml')}
+                    className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-colors flex items-center space-x-1.5 shrink-0 shadow-sm"
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>Open Decoded YAML</span>
+                  </button>
+                </div>
+              )}
+
               {/* Filter bar for raw YAML / events */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2" />

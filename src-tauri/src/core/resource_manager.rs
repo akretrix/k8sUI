@@ -1886,6 +1886,48 @@ impl GenericResourceManager {
         })
     }
 
+    pub async fn get_secret_yaml_decoded(
+        &self,
+        name: &str,
+        namespace: Option<&str>,
+    ) -> Result<String, ConnectorError> {
+        use base64::Engine as _;
+        let ns = namespace.unwrap_or("default");
+        let api: Api<k8s_openapi::api::core::v1::Secret> = Api::namespaced(self.client.clone(), ns);
+
+        let mut secret = tokio::time::timeout(std::time::Duration::from_secs(20), api.get(name))
+            .await
+            .map_err(|_| {
+                ConnectorError::Timeout(format!("Fetching Secret/{name} timed out after 20s"))
+            })?
+            .map_err(ConnectorError::KubeError)?;
+
+        secret.metadata.managed_fields = None;
+
+        if let Some(data_map) = secret.data.take() {
+            let mut string_map = std::collections::BTreeMap::new();
+            for (key, byte_buf) in data_map {
+                let raw_bytes = byte_buf.0;
+                let val_str = match String::from_utf8(raw_bytes) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_bytes = e.into_bytes();
+                        format!(
+                            "<binary data: {} bytes, base64: {}>",
+                            err_bytes.len(),
+                            base64::engine::general_purpose::STANDARD.encode(&err_bytes)
+                        )
+                    }
+                };
+                string_map.insert(key, val_str);
+            }
+            secret.string_data = Some(string_map);
+        }
+
+        serde_yaml::to_string(&secret)
+            .map_err(|e| ConnectorError::SerializationError(e.to_string()))
+    }
+
     pub async fn update_secret_data(
         &self,
         name: &str,

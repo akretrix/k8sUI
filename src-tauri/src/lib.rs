@@ -237,6 +237,7 @@ pub fn run() {
             commands::rerun_job,
             commands::get_cluster_overview,
             commands::get_secret_data,
+            commands::get_secret_yaml_decoded,
             commands::update_secret_data,
             commands::aws_sso_login,
             commands::list_aws_sso_sessions,

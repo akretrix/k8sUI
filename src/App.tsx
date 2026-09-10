@@ -20,7 +20,7 @@ import { PendingAiProposal, PodSummary, ClusterContextSummary, ActivePortForward
 import { AppTab, RESOURCE_TITLES } from './types/tabs';
 import { TabBar } from './components/layout/TabBar';
 import { NewTabModal } from './components/layout/NewTabModal';
-import { ConfirmationModal, ConfirmationActionType } from './components/common/ConfirmationModal';
+import { ConfirmationModal, ConfirmationActionType, BatchTargetItem } from './components/common/ConfirmationModal';
 import { ScaleModal, ScaleTarget } from './components/common/ScaleModal';
 import { DesignSystemShowcase } from './components/design-system/DesignSystemShowcase';
 import { AwsSsoModal } from './components/cluster/AwsSsoModal';
@@ -218,6 +218,7 @@ export const App: React.FC = () => {
     resourceKind: string;
     resourceName: string;
     namespace?: string;
+    batchItems?: BatchTargetItem[];
   } | null>(null);
 
   // Tab Handlers
@@ -538,6 +539,7 @@ export const App: React.FC = () => {
     // Kubernetes' list API has no "these N namespaces" query of its own.
     queryFn: () => api.listPods(selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined),
     enabled: !!activeCluster && activeResource === 'pods',
+    placeholderData: (previousData) => previousData,
     staleTime: 15_000,
     refetchInterval: activeResource === 'pods' ? 8000 : false,
   });
@@ -716,8 +718,33 @@ export const App: React.FC = () => {
 
   const handleExecuteConfirmation = async () => {
     if (!confirmationTarget) return;
-    const { actionType, resourceKind, resourceName, namespace } = confirmationTarget;
+    const { actionType, resourceKind, resourceName, namespace, batchItems } = confirmationTarget;
     const ns = namespace || 'default';
+
+    if (batchItems && batchItems.length > 0) {
+      if (actionType === 'restart') {
+        await Promise.all(
+          batchItems.map((item) =>
+            restartMutation.mutateAsync({
+              kind: item.kind || resourceKind,
+              name: item.name,
+              namespace: item.namespace || 'default',
+            })
+          )
+        );
+      } else if (actionType === 'delete') {
+        await Promise.all(
+          batchItems.map((item) =>
+            deleteMutation.mutateAsync({
+              kind: item.kind || resourceKind,
+              name: item.name,
+              namespace: item.namespace,
+            })
+          )
+        );
+      }
+      return;
+    }
 
     if (actionType === 'restart') {
       await restartMutation.mutateAsync({
@@ -1033,6 +1060,18 @@ export const App: React.FC = () => {
                     namespace: pod.namespace,
                   })
                 }
+                onBatchDeletePods={(selectedPods) =>
+                  setConfirmationTarget({
+                    actionType: 'delete',
+                    resourceKind: 'Pods',
+                    resourceName: `${selectedPods.length} pods`,
+                    batchItems: selectedPods.map((p) => ({
+                      name: p.name,
+                      namespace: p.namespace,
+                      kind: 'Pod',
+                    })),
+                  })
+                }
                 onRefresh={() => refetchPods()}
                 onReconnect={handleReconnect}
                 onSsoLogin={handleAwsSsoBrowserLogin}
@@ -1059,6 +1098,18 @@ export const App: React.FC = () => {
                     namespace: res.namespace || 'default',
                   })
                 }
+                onBatchRestart={(resources) =>
+                  setConfirmationTarget({
+                    actionType: 'restart',
+                    resourceKind: activeResource,
+                    resourceName: `${resources.length} ${activeResource}`,
+                    batchItems: resources.map((r) => ({
+                      name: r.name,
+                      namespace: r.namespace || 'default',
+                      kind: r.kind || activeResource,
+                    })),
+                  })
+                }
                 onViewYaml={(res) => setSelectedResourceForYaml({ kind: activeResource, name: res.name, namespace: res.namespace })}
                 onDelete={(res) =>
                   setConfirmationTarget({
@@ -1066,6 +1117,18 @@ export const App: React.FC = () => {
                     resourceKind: activeResource,
                     resourceName: res.name,
                     namespace: res.namespace || 'default',
+                  })
+                }
+                onBatchDelete={(resources) =>
+                  setConfirmationTarget({
+                    actionType: 'delete',
+                    resourceKind: activeResource,
+                    resourceName: `${resources.length} ${activeResource}`,
+                    batchItems: resources.map((r) => ({
+                      name: r.name,
+                      namespace: r.namespace || 'default',
+                      kind: r.kind || activeResource,
+                    })),
                   })
                 }
                 onTriggerCronJob={(res) =>
@@ -1255,6 +1318,7 @@ export const App: React.FC = () => {
         namespace={confirmationTarget?.namespace}
         clusterName={activeCluster?.name}
         isReadOnly={isReadOnly}
+        batchItems={confirmationTarget?.batchItems}
       />
 
       <AwsSsoModal

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { PodSummary } from '../../types/cluster';
 import { NamespaceMultiSelect } from '../common/NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from '../common/ColumnVisibilityDropdown';
@@ -40,6 +40,7 @@ interface PodTableProps {
   onDescribePod?: (pod: PodSummary) => void;
   onLogsPod?: (pod: PodSummary) => void;
   onDeletePod?: (pod: PodSummary) => void;
+  onBatchDeletePods?: (pods: PodSummary[]) => void;
   onRefresh: () => void;
   onReconnect?: () => void;
   onSsoLogin?: () => void;
@@ -77,11 +78,13 @@ export const PodTable: React.FC<PodTableProps> = ({
   onDescribePod,
   onLogsPod,
   onDeletePod,
+  onBatchDeletePods,
   onRefresh,
   onReconnect,
   onSsoLogin,
 }) => {
   const [internalSearchTerm, setInternalSearchTerm] = useState('');
+  const [selectedPodKeys, setSelectedPodKeys] = useState<Set<string>>(new Set());
   const searchTerm = externalSearchTerm !== undefined ? externalSearchTerm : internalSearchTerm;
   const setSearchTerm = onSearchChange || setInternalSearchTerm;
   const [sortField, setSortField] = useState<keyof PodSummary>('name');
@@ -236,6 +239,39 @@ export const PodTable: React.FC<PodTableProps> = ({
       return 0;
     });
 
+  useEffect(() => {
+    setSelectedPodKeys(new Set());
+  }, [selectedNamespaces]);
+
+  const selectedPods = useMemo(() => {
+    return filteredPods.filter((p) => selectedPodKeys.has(`${p.namespace || 'default'}/${p.name}`));
+  }, [filteredPods, selectedPodKeys]);
+
+  const isAllSelected = filteredPods.length > 0 && selectedPods.length === filteredPods.length;
+  const isSomeSelected = selectedPods.length > 0 && selectedPods.length < filteredPods.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedPodKeys(new Set());
+    } else {
+      setSelectedPodKeys(new Set(filteredPods.map((p) => `${p.namespace || 'default'}/${p.name}`)));
+    }
+  };
+
+  const toggleSelectPod = (pod: PodSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const key = `${pod.namespace || 'default'}/${pod.name}`;
+    setSelectedPodKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
   const toggleSort = (field: keyof PodSummary) => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
@@ -246,7 +282,7 @@ export const PodTable: React.FC<PodTableProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-background">
+    <div className="flex-1 flex flex-col min-h-0 bg-background relative">
       {/* Controls Bar: Namespace filter + Search + Columns + Refresh */}
       <div className="h-12 border-b border-border bg-surface/50 px-4 flex items-center justify-between gap-4 shrink-0">
         <div className="flex items-center space-x-3">
@@ -292,6 +328,20 @@ export const PodTable: React.FC<PodTableProps> = ({
         <table className="w-full text-left text-xs border-collapse">
           <thead className="bg-surface/80 text-gray-400 sticky top-0 z-10 border-b border-border font-mono uppercase text-[11px]">
             <tr>
+              <th className="py-2.5 px-3 w-10 text-center">
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  ref={(input) => {
+                    if (input) {
+                      input.indeterminate = isSomeSelected;
+                    }
+                  }}
+                  onChange={toggleSelectAll}
+                  className="w-3.5 h-3.5 rounded border-gray-600 bg-surface-elevated text-brand-500 focus:ring-brand-500/20 cursor-pointer accent-brand-500"
+                  aria-label="Select all pods"
+                />
+              </th>
               {isColVisible.name && (
                 <th
                   onClick={() => toggleSort('name')}
@@ -345,7 +395,7 @@ export const PodTable: React.FC<PodTableProps> = ({
           <tbody className="divide-y divide-border/60 font-mono">
             {isLoading && filteredPods.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-16 text-center text-sm text-gray-400 font-sans">
+                <td colSpan={11} className="py-16 text-center text-sm text-gray-400 font-sans">
                   <div className="flex flex-col items-center justify-center space-y-3">
                     <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
                     <span className="font-mono text-xs text-gray-400">Loading pods from cluster…</span>
@@ -354,7 +404,7 @@ export const PodTable: React.FC<PodTableProps> = ({
               </tr>
             ) : isError ? (
               <tr>
-                <td colSpan={10} className="py-16 text-center text-sm font-sans">
+                <td colSpan={11} className="py-16 text-center text-sm font-sans">
                   {(() => {
                     const errMessage = errorMessage || 'Cluster communication error';
                     const lowerErr = errMessage.toLowerCase();
@@ -442,18 +492,32 @@ export const PodTable: React.FC<PodTableProps> = ({
               </tr>
             ) : filteredPods.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-12 text-center text-gray-500 font-sans">
+                <td colSpan={11} className="py-12 text-center text-gray-500 font-sans">
                   No pods found matching query in current namespace.
                 </td>
               </tr>
             ) : (
-              filteredPods.map((pod) => (
-                <tr
-                  key={`${pod.namespace}-${pod.name}`}
-                  onClick={() => onDescribePod ? onDescribePod(pod) : onViewYaml(pod)}
-                  className="hover:bg-surface-elevated/50 transition-colors group cursor-pointer"
-                >
-                  {isColVisible.name && (
+              filteredPods.map((pod) => {
+                const key = `${pod.namespace || 'default'}/${pod.name}`;
+                const isSelected = selectedPodKeys.has(key);
+                return (
+                  <tr
+                    key={`${pod.namespace}-${pod.name}`}
+                    onClick={() => onDescribePod ? onDescribePod(pod) : onViewYaml(pod)}
+                    className={`transition-colors group cursor-pointer ${
+                      isSelected ? 'bg-brand-500/15 hover:bg-brand-500/20' : 'hover:bg-surface-elevated/50'
+                    }`}
+                  >
+                    <td className="py-2.5 px-3 w-10 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => toggleSelectPod(pod, e as any)}
+                        className="w-3.5 h-3.5 rounded border-gray-600 bg-surface-elevated text-brand-500 focus:ring-brand-500/20 cursor-pointer accent-brand-500"
+                        aria-label={`Select ${pod.name}`}
+                      />
+                    </td>
+                    {isColVisible.name && (
                     <td className="py-2.5 px-4 font-semibold text-gray-100 flex items-center space-x-2">
                       <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                       <span className="truncate max-w-xs">{pod.name}</span>
@@ -588,11 +652,55 @@ export const PodTable: React.FC<PodTableProps> = ({
                     </td>
                   )}
                 </tr>
-              ))
-            )}
+              );
+            })
+          )}
           </tbody>
         </table>
       </div>
+
+      {/* Floating Batch Action Bar */}
+      {selectedPods.length > 0 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-fit max-w-xl bg-surface-elevated/95 backdrop-blur-md border border-brand-500/40 rounded-xl shadow-2xl px-4 py-2.5 flex items-center space-x-3 z-30 animate-in slide-in-from-bottom-2 duration-150">
+          <div className="flex items-center space-x-2 text-xs text-gray-200">
+            <span className="bg-brand-500/25 text-brand-300 font-mono font-semibold px-2 py-0.5 rounded-full text-[11px] border border-brand-500/40">
+              {selectedPods.length}
+            </span>
+            <span className="font-medium">
+              {selectedPods.length === 1 ? 'pod' : 'pods'} selected
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-border" />
+
+          <div className="flex items-center space-x-2">
+            {onBatchDeletePods && (
+              <button
+                type="button"
+                onClick={() => onBatchDeletePods(selectedPods)}
+                disabled={isReadOnly}
+                className={`px-3 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all shadow-sm ${
+                  isReadOnly
+                    ? 'bg-rose-950/20 text-gray-500 border border-border cursor-not-allowed'
+                    : 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white border border-rose-500/50'
+                }`}
+                title={isReadOnly ? 'Read-Only Mode' : `Delete / Terminate ${selectedPods.length} pods`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Selected ({selectedPods.length})</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setSelectedPodKeys(new Set())}
+              className="px-2.5 py-1 rounded-md text-xs text-gray-400 hover:text-gray-200 hover:bg-surface transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

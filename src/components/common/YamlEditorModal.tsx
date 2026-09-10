@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, ShieldCheck, AlertCircle, CheckCircle2, Loader2, Pencil, Lock } from 'lucide-react';
+import { X, ShieldCheck, AlertCircle, CheckCircle2, Loader2, Pencil, Lock, Unlock } from 'lucide-react';
 import { api } from '../../api/tauriClient';
 import { DryRunResult } from '../../types/cluster';
 
@@ -40,18 +40,26 @@ export const YamlEditorModal: React.FC<YamlEditorModalProps> = ({
   const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
   const [isApplying, setIsApplying] = useState(false);
 
+  const isSecret = ['secret', 'secrets'].includes((resource?.kind || '').toLowerCase());
+  const [secretMode, setSecretMode] = useState<'decoded' | 'raw'>('decoded');
+
   useEffect(() => {
     if (!isOpen || !resource) return;
     setStep('edit');
     setError(null);
     setDryRun(null);
     setLoading(true);
-    api
-      .getResourceYaml(resource.kind, resource.name, resource.namespace)
+
+    const fetchPromise =
+      isSecret && secretMode === 'decoded' && typeof api.getSecretYamlDecoded === 'function'
+        ? api.getSecretYamlDecoded(resource.name, resource.namespace)
+        : api.getResourceYaml(resource.kind, resource.name, resource.namespace);
+
+    fetchPromise
       .then(setYaml)
       .catch((e: any) => setError(e?.message || String(e)))
       .finally(() => setLoading(false));
-  }, [isOpen, resource]);
+  }, [isOpen, resource, isSecret, secretMode]);
 
   if (!isOpen || !resource) return null;
 
@@ -102,19 +110,59 @@ export const YamlEditorModal: React.FC<YamlEditorModalProps> = ({
                 <span className="text-xs px-2 py-0.5 rounded bg-surface-elevated font-mono font-normal text-indigo-300">
                   {resource.kind}/{resource.name}
                 </span>
+                {isSecret && step === 'edit' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/60 font-mono font-medium">
+                    {secretMode === 'decoded' ? 'Decoded stringData' : 'Raw Base64'}
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-gray-400">
                 {step === 'edit'
                   ? isReadOnly
                     ? 'Read-only mode — unlock write access to apply changes.'
+                    : isSecret && secretMode === 'decoded'
+                    ? 'All base64 secrets decoded into stringData. Edits apply seamlessly.'
                     : 'Edit, then review a server-side dry-run diff before applying.'
                   : 'Review the server-side dry-run diff against live cluster state.'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-surface-hover transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center space-x-2">
+            {isSecret && step === 'edit' && (
+              <div className="bg-surface-elevated p-0.5 rounded-lg border border-border flex items-center text-xs font-mono mr-2">
+                <button
+                  type="button"
+                  onClick={() => setSecretMode('decoded')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center space-x-1.5 ${
+                    secretMode === 'decoded'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                  title="View and edit secret data keys decoded as human-readable stringData"
+                >
+                  <Unlock className="w-3 h-3" />
+                  <span>Decoded (stringData)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSecretMode('raw')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors flex items-center space-x-1.5 ${
+                    secretMode === 'raw'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                  title="View raw base64 encoded data"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>Raw (data)</span>
+                </button>
+              </div>
+            )}
+            <button onClick={onClose} className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-surface-hover transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {error && (
