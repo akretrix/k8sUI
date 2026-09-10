@@ -1046,6 +1046,58 @@ impl GenericResourceManager {
                             .and_then(|s| s.get("completions").and_then(|v| v.as_i64()))
                             .unwrap_or(1);
                         obj["completions"] = json!(format!("{}/{}", succeeded, completions));
+
+                        let suspended = item
+                            .data
+                            .get("spec")
+                            .and_then(|s| s.get("suspend").and_then(|v| v.as_bool()))
+                            .unwrap_or(false);
+                        obj["suspend"] = json!(suspended);
+
+                        let mut duration_str = "-".to_string();
+                        if let Some(st) = s {
+                            if let Some(start_time_str) = st.get("startTime").and_then(|v| v.as_str()) {
+                                if let Ok(start_dt) = chrono::DateTime::parse_from_rfc3339(start_time_str) {
+                                    let end_dt = if let Some(comp_time_str) = st.get("completionTime").and_then(|v| v.as_str()) {
+                                        chrono::DateTime::parse_from_rfc3339(comp_time_str).ok()
+                                    } else {
+                                        Some(chrono::Utc::now().into())
+                                    };
+                                    if let Some(end_dt) = end_dt {
+                                        let dur = end_dt.signed_duration_since(start_dt);
+                                        if dur.num_days() > 0 {
+                                            duration_str = format!("{}d {}h", dur.num_days(), dur.num_hours() % 24);
+                                        } else if dur.num_hours() > 0 {
+                                            duration_str = format!("{}h {}m", dur.num_hours(), dur.num_minutes() % 60);
+                                        } else if dur.num_minutes() > 0 {
+                                            duration_str = format!("{}m {}s", dur.num_minutes(), dur.num_seconds() % 60);
+                                        } else {
+                                            duration_str = format!("{}s", dur.num_seconds().max(0));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        obj["duration"] = json!(duration_str);
+
+                        let mut job_status = "Active".to_string();
+                        if let Some(conds) = s.and_then(|st| st.get("conditions").and_then(|c| c.as_array())) {
+                            if conds.iter().any(|c| c.get("type").and_then(|v| v.as_str()) == Some("Complete") && c.get("status").and_then(|v| v.as_str()) == Some("True")) {
+                                job_status = "Complete".to_string();
+                            } else if conds.iter().any(|c| c.get("type").and_then(|v| v.as_str()) == Some("Failed") && c.get("status").and_then(|v| v.as_str()) == Some("True")) {
+                                job_status = "Failed".to_string();
+                            }
+                        }
+                        if job_status == "Active" {
+                            if suspended {
+                                job_status = "Suspended".to_string();
+                            } else if let Some(active) = s.and_then(|st| st.get("active").and_then(|v| v.as_i64())) {
+                                if active > 0 {
+                                    job_status = "Running".to_string();
+                                }
+                            }
+                        }
+                        obj["status"] = json!(job_status);
                     }
                     "CronJob" => {
                         let schedule = item
@@ -1058,8 +1110,48 @@ impl GenericResourceManager {
                             .get("spec")
                             .and_then(|s| s.get("suspend").and_then(|v| v.as_bool()))
                             .unwrap_or(false);
+                        let concurrency_policy = item
+                            .data
+                            .get("spec")
+                            .and_then(|s| s.get("concurrencyPolicy").and_then(|v| v.as_str()))
+                            .unwrap_or("Allow");
+                        let active_count = item
+                            .data
+                            .get("status")
+                            .and_then(|st| st.get("active").and_then(|v| v.as_array()))
+                            .map(|a| a.len())
+                            .unwrap_or(0);
+                        let last_schedule = item
+                            .data
+                            .get("status")
+                            .and_then(|st| st.get("lastScheduleTime").and_then(|v| v.as_str()))
+                            .unwrap_or("-");
+
+                        let last_schedule_relative = if last_schedule != "-" {
+                            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(last_schedule) {
+                                let dur = chrono::Utc::now().signed_duration_since(dt);
+                                if dur.num_days() > 0 {
+                                    format!("{}d ago", dur.num_days())
+                                } else if dur.num_hours() > 0 {
+                                    format!("{}h ago", dur.num_hours())
+                                } else if dur.num_minutes() > 0 {
+                                    format!("{}m ago", dur.num_minutes())
+                                } else {
+                                    format!("{}s ago", dur.num_seconds().max(0))
+                                }
+                            } else {
+                                last_schedule.to_string()
+                            }
+                        } else {
+                            "-".to_string()
+                        };
+
                         obj["schedule"] = json!(schedule);
                         obj["suspend"] = json!(suspended);
+                        obj["concurrencyPolicy"] = json!(concurrency_policy);
+                        obj["active"] = json!(active_count);
+                        obj["lastScheduleTime"] = json!(last_schedule_relative);
+                        obj["status"] = json!(if suspended { "Suspended" } else { "Active" });
                     }
                     "Service" => {
                         let spec = item.data.get("spec");
@@ -2712,6 +2804,212 @@ impl GenericResourceManager {
             .await
             .map_err(ConnectorError::KubeError)?;
         Ok(true)
+    }
+
+    pub async fn trigger_cronjob(
+        &self,
+        name: &str,
+        namespace: &str,
+    ) -> Result<String, ConnectorError> {
+        let (cj_res, cj_caps) = self.resolve_api_resource("cronjobs")?;
+        let cj_api = self.get_api(&cj_res, &cj_caps, Some(namespace));
+        let cj = cj_api.get(name).await.map_err(ConnectorError::KubeError)?;
+
+        let spec = cj
+            .data
+            .get("spec")
+            .ok_or_else(|| ConnectorError::Generic("CronJob has no spec".to_string()))?;
+        let job_template = spec
+            .get("jobTemplate")
+            .ok_or_else(|| ConnectorError::Generic("CronJob has no jobTemplate".to_string()))?;
+        let job_spec = job_template
+            .get("spec")
+            .cloned()
+            .ok_or_else(|| ConnectorError::Generic("jobTemplate has no spec".to_string()))?;
+
+        let now_ts = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+        let manual_job_name = format!("{}-manual-{}", name, now_ts);
+
+        let mut annotations = serde_json::Map::new();
+        if let Some(orig_annotations) = job_template
+            .get("metadata")
+            .and_then(|m| m.get("annotations"))
+            .and_then(|a| a.as_object())
+        {
+            annotations.extend(orig_annotations.clone());
+        }
+        annotations.insert(
+            "cronjob.kubernetes.io/instantiate".to_string(),
+            json!("manual"),
+        );
+
+        let mut labels = serde_json::Map::new();
+        if let Some(orig_labels) = job_template
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+        {
+            labels.extend(orig_labels.clone());
+        }
+
+        let uid = cj.metadata.uid.clone().unwrap_or_default();
+        let owner_reference = json!({
+            "apiVersion": "batch/v1",
+            "kind": "CronJob",
+            "name": name,
+            "uid": uid,
+            "blockOwnerDeletion": true,
+        });
+
+        let job_json = json!({
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {
+                "name": manual_job_name,
+                "namespace": namespace,
+                "annotations": annotations,
+                "labels": labels,
+                "ownerReferences": [owner_reference],
+            },
+            "spec": job_spec
+        });
+
+        let job_dynamic: DynamicObject = serde_json::from_value(job_json)
+            .map_err(|e| ConnectorError::Generic(format!("Failed to construct Job: {}", e)))?;
+
+        let (job_res, job_caps) = self.resolve_api_resource("jobs")?;
+        let job_api = self.get_api(&job_res, &job_caps, Some(namespace));
+        job_api
+            .create(&PostParams::default(), &job_dynamic)
+            .await
+            .map_err(ConnectorError::KubeError)?;
+
+        Ok(manual_job_name)
+    }
+
+    pub async fn suspend_cronjob(
+        &self,
+        name: &str,
+        namespace: &str,
+        suspend: bool,
+    ) -> Result<bool, ConnectorError> {
+        let (resource, caps) = self.resolve_api_resource("cronjobs")?;
+        let api = self.get_api(&resource, &caps, Some(namespace));
+        let patch_json = json!({
+            "spec": {
+                "suspend": suspend
+            }
+        });
+        api.patch(name, &PatchParams::default(), &Patch::Merge(&patch_json))
+            .await
+            .map_err(ConnectorError::KubeError)?;
+        Ok(true)
+    }
+
+    pub async fn suspend_job(
+        &self,
+        name: &str,
+        namespace: &str,
+        suspend: bool,
+    ) -> Result<bool, ConnectorError> {
+        let (resource, caps) = self.resolve_api_resource("jobs")?;
+        let api = self.get_api(&resource, &caps, Some(namespace));
+        let patch_json = json!({
+            "spec": {
+                "suspend": suspend
+            }
+        });
+        api.patch(name, &PatchParams::default(), &Patch::Merge(&patch_json))
+            .await
+            .map_err(ConnectorError::KubeError)?;
+        Ok(true)
+    }
+
+    pub async fn rerun_job(
+        &self,
+        name: &str,
+        namespace: &str,
+    ) -> Result<String, ConnectorError> {
+        let (job_res, job_caps) = self.resolve_api_resource("jobs")?;
+        let job_api = self.get_api(&job_res, &job_caps, Some(namespace));
+        let orig = job_api.get(name).await.map_err(ConnectorError::KubeError)?;
+
+        let spec_val = orig
+            .data
+            .get("spec")
+            .cloned()
+            .ok_or_else(|| ConnectorError::Generic("Job has no spec".to_string()))?;
+
+        let mut spec_obj = spec_val
+            .as_object()
+            .cloned()
+            .ok_or_else(|| ConnectorError::Generic("Job spec is not an object".to_string()))?;
+
+        spec_obj.remove("selector");
+
+        if let Some(template) = spec_obj.get_mut("template").and_then(|t| t.as_object_mut()) {
+            if let Some(tmpl_meta) = template.get_mut("metadata").and_then(|m| m.as_object_mut()) {
+                if let Some(labels) = tmpl_meta.get_mut("labels").and_then(|l| l.as_object_mut()) {
+                    labels.remove("controller-uid");
+                    labels.remove("batch.kubernetes.io/controller-uid");
+                    labels.remove("job-name");
+                    labels.remove("batch.kubernetes.io/job-name");
+                }
+            }
+        }
+
+        let mut labels = orig
+            .data
+            .get("metadata")
+            .and_then(|m| m.get("labels"))
+            .and_then(|l| l.as_object())
+            .cloned()
+            .unwrap_or_default();
+        labels.remove("controller-uid");
+        labels.remove("batch.kubernetes.io/controller-uid");
+        labels.remove("job-name");
+        labels.remove("batch.kubernetes.io/job-name");
+
+        let annotations = orig
+            .data
+            .get("metadata")
+            .and_then(|m| m.get("annotations"))
+            .and_then(|a| a.as_object())
+            .cloned()
+            .unwrap_or_default();
+
+        let owner_references = orig
+            .data
+            .get("metadata")
+            .and_then(|m| m.get("ownerReferences"))
+            .cloned()
+            .unwrap_or(json!([]));
+
+        let now_ts = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
+        let retry_job_name = format!("{}-retry-{}", name, now_ts);
+
+        let new_job_json = json!({
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {
+                "name": retry_job_name,
+                "namespace": namespace,
+                "labels": labels,
+                "annotations": annotations,
+                "ownerReferences": owner_references,
+            },
+            "spec": spec_obj
+        });
+
+        let new_job_dynamic: DynamicObject = serde_json::from_value(new_job_json)
+            .map_err(|e| ConnectorError::Generic(format!("Failed to build cloned Job: {}", e)))?;
+
+        job_api
+            .create(&PostParams::default(), &new_job_dynamic)
+            .await
+            .map_err(ConnectorError::KubeError)?;
+
+        Ok(retry_job_name)
     }
 
     pub async fn delete_resource(

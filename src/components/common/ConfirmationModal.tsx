@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
-import { AlertTriangle, RefreshCcw, Trash2, X, Copy, Check } from 'lucide-react';
+import { AlertTriangle, RefreshCcw, Trash2, X, Copy, Check, Play, Pause, RefreshCw } from 'lucide-react';
 
-export type ConfirmationActionType = 'delete' | 'restart';
+export type ConfirmationActionType =
+  | 'delete'
+  | 'restart'
+  | 'trigger_job'
+  | 'suspend_cronjob'
+  | 'resume_cronjob'
+  | 'suspend_job'
+  | 'resume_job'
+  | 'rerun_job';
 
 export interface ConfirmationModalProps {
   isOpen: boolean;
@@ -34,7 +42,99 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   if (!isOpen) return null;
 
   const isDelete = actionType === 'delete';
-  const requiresTypeToConfirm = isDelete; // Require typing name on destructive delete
+  const isTrigger = actionType === 'trigger_job';
+  const isRerun = actionType === 'rerun_job';
+  const isSuspend = actionType === 'suspend_cronjob' || actionType === 'suspend_job';
+  const isResume = actionType === 'resume_cronjob' || actionType === 'resume_job';
+  const requiresTypeToConfirm = isDelete; // Require typing name only on destructive delete
+
+  const getActionTitle = () => {
+    switch (actionType) {
+      case 'delete':
+        return `Delete ${resourceKind}`;
+      case 'restart':
+        return `Restart ${resourceKind}`;
+      case 'trigger_job':
+        return `Trigger Run: ${resourceKind}`;
+      case 'rerun_job':
+        return `Rerun ${resourceKind}`;
+      case 'suspend_cronjob':
+      case 'suspend_job':
+        return `Suspend ${resourceKind}`;
+      case 'resume_cronjob':
+      case 'resume_job':
+        return `Resume ${resourceKind}`;
+      default:
+        return `Confirm Action`;
+    }
+  };
+
+  const getActionIcon = () => {
+    if (isDelete) return <Trash2 className="w-5 h-5" />;
+    if (isTrigger || isResume) return <Play className="w-5 h-5 fill-current" />;
+    if (isSuspend) return <Pause className="w-5 h-5" />;
+    if (isRerun) return <RefreshCw className="w-5 h-5" />;
+    return <RefreshCcw className="w-5 h-5" />;
+  };
+
+  const getHeaderBadgeClass = () => {
+    if (isDelete) return 'bg-red-500/10 text-red-400';
+    if (isTrigger || isResume) return 'bg-emerald-500/10 text-emerald-400';
+    if (isSuspend) return 'bg-amber-500/10 text-amber-400';
+    if (isRerun) return 'bg-indigo-500/10 text-indigo-400';
+    return 'bg-amber-500/10 text-amber-400';
+  };
+
+  const getBannerClass = () => {
+    if (isDelete) return 'bg-red-950/40 border-red-800/60 text-red-200';
+    if (isTrigger || isResume) return 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200';
+    if (isSuspend) return 'bg-amber-950/40 border-amber-800/60 text-amber-200';
+    if (isRerun) return 'bg-indigo-950/40 border-indigo-800/60 text-indigo-200';
+    return 'bg-amber-950/40 border-amber-800/60 text-amber-200';
+  };
+
+  const getActionDescription = () => {
+    if (isDelete) {
+      return (
+        <span>
+          Are you sure you want to delete <b className="select-text">{resourceKind}/{resourceName}</b>? This action cannot be undone and will terminate all underlying pods.
+        </span>
+      );
+    }
+    if (isTrigger) {
+      return (
+        <span>
+          Are you sure you want to trigger an on-demand run for <b className="select-text">{resourceKind}/{resourceName}</b>? This will instantiate a new one-off Job immediately.
+        </span>
+      );
+    }
+    if (isRerun) {
+      return (
+        <span>
+          Are you sure you want to rerun <b className="select-text">{resourceKind}/{resourceName}</b>? A new Job will be created cloning the spec of this job.
+        </span>
+      );
+    }
+    if (isSuspend) {
+      return (
+        <span>
+          Are you sure you want to suspend <b className="select-text">{resourceKind}/{resourceName}</b>? Future scheduled runs will be paused until resumed.
+        </span>
+      );
+    }
+    if (isResume) {
+      return (
+        <span>
+          Are you sure you want to resume <b className="select-text">{resourceKind}/{resourceName}</b>? Scheduled executions will resume according to its schedule.
+        </span>
+      );
+    }
+    return (
+      <span>
+        Are you sure you want to perform a rolling rollout restart on <b className="select-text">{resourceKind}/{resourceName}</b>? This will trigger a graceful recreation of all active pods.
+      </span>
+    );
+  };
 
   const handleCopyName = () => {
     navigator.clipboard.writeText(resourceName);
@@ -76,16 +176,12 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 border-b border-border bg-surface flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div
-              className={`p-2 rounded-lg ${
-                isDelete ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'
-              }`}
-            >
-              {isDelete ? <Trash2 className="w-5 h-5" /> : <RefreshCcw className="w-5 h-5" />}
+            <div className={`p-2 rounded-lg ${getHeaderBadgeClass()}`}>
+              {getActionIcon()}
             </div>
             <div>
               <h3 className="text-sm font-semibold text-gray-100">
-                {isDelete ? `Delete ${resourceKind}` : `Restart ${resourceKind}`}
+                {getActionTitle()}
               </h3>
               <p className="text-xs text-gray-400">Confirmation required</p>
             </div>
@@ -100,24 +196,10 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4 select-text">
-          <div
-            className={`p-3 rounded-lg border text-xs flex items-start space-x-2.5 select-text ${
-              isDelete
-                ? 'bg-red-950/40 border-red-800/60 text-red-200'
-                : 'bg-amber-950/40 border-amber-800/60 text-amber-200'
-            }`}
-          >
+          <div className={`p-3 rounded-lg border text-xs flex items-start space-x-2.5 select-text ${getBannerClass()}`}>
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <div className="select-text">
-              {isDelete ? (
-                <span>
-                  Are you sure you want to delete <b className="select-text">{resourceKind}/{resourceName}</b>? This action cannot be undone and will terminate all underlying pods.
-                </span>
-              ) : (
-                <span>
-                  Are you sure you want to perform a rolling rollout restart on <b className="select-text">{resourceKind}/{resourceName}</b>? This will trigger a graceful recreation of all active pods.
-                </span>
-              )}
+              {getActionDescription()}
             </div>
           </div>
 
@@ -144,48 +226,48 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             )}
             {clusterName && (
               <div className="flex justify-between text-gray-400">
-                <span>Cluster:</span>
+                <span>Target Cluster:</span>
                 <span className="text-gray-200 select-text">{clusterName}</span>
               </div>
             )}
           </div>
 
           {requiresTypeToConfirm && (
-            <div className="space-y-1.5 select-text">
+            <div className="space-y-2 select-text">
               <div className="flex items-center justify-between text-xs">
-                <label className="text-gray-400 select-text">
-                  Type <span className="font-mono text-red-300 font-semibold select-text">{resourceName}</span> to confirm:
+                <label htmlFor="confirm-name" className="text-gray-300 font-medium select-text">
+                  Type <span className="font-mono text-red-400 font-bold select-all">{resourceName}</span> to confirm:
                 </label>
                 <button
                   type="button"
                   onClick={handleAutoFill}
-                  className="text-[11px] font-mono text-red-300 hover:text-white bg-red-950/80 hover:bg-red-900 px-2 py-0.5 rounded border border-red-800 flex items-center space-x-1 transition-colors shrink-0"
-                  title="Click to copy and auto-fill the confirmation name"
+                  className="text-[11px] text-brand-400 hover:text-brand-300 hover:underline flex items-center space-x-1"
                 >
-                  <Copy className="w-2.5 h-2.5" />
                   <span>Auto-fill</span>
                 </button>
               </div>
               <input
+                id="confirm-name"
                 type="text"
+                autoFocus
                 value={typedName}
                 onChange={(e) => setTypedName(e.target.value)}
                 placeholder={resourceName}
-                className="w-full bg-surface border border-border rounded-md px-3 py-2 text-xs text-gray-100 font-mono focus:outline-none focus:border-red-500 transition-colors select-text"
-                autoFocus
+                className="w-full px-3 py-2 bg-surface border border-border rounded-lg text-xs font-mono text-gray-100 placeholder-gray-600 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-colors select-text"
               />
             </div>
           )}
 
           {error && (
-            <div className="p-2.5 rounded bg-red-950/80 border border-red-700 text-xs text-red-200">
-              {error}
+            <div className="p-2.5 rounded-lg bg-red-950/60 border border-red-800 text-red-200 text-xs flex items-center space-x-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t border-border bg-surface flex items-center justify-end space-x-2">
+        <div className="px-5 py-3 border-t border-border bg-surface flex items-center justify-end space-x-2.5">
           <button
             type="button"
             onClick={onClose}
@@ -201,6 +283,10 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
             className={`px-4 py-1.5 rounded-md text-xs font-medium text-white shadow-sm transition-all flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
               isDelete
                 ? 'bg-red-600 hover:bg-red-500 active:bg-red-700'
+                : isTrigger || isResume
+                ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700'
+                : isRerun
+                ? 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700'
                 : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700'
             }`}
           >
@@ -210,7 +296,19 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                 <span>Executing...</span>
               </>
             ) : (
-              <span>{isDelete ? 'Confirm Delete' : 'Confirm Restart'}</span>
+              <span>
+                {isDelete
+                  ? 'Confirm Delete'
+                  : isTrigger
+                  ? 'Run Job Now'
+                  : isRerun
+                  ? 'Confirm Rerun'
+                  : isSuspend
+                  ? 'Confirm Suspend'
+                  : isResume
+                  ? 'Confirm Resume'
+                  : 'Confirm Restart'}
+              </span>
             )}
           </button>
         </div>

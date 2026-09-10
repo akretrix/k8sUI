@@ -18,6 +18,7 @@ import {
   Clock,
   Compass,
   HardDrive,
+  RefreshCw,
 } from 'lucide-react';
 
 interface NewTabModalProps {
@@ -49,6 +50,7 @@ const COMMON_RESOURCES: ResourceCategory[] = [
   { id: 'dashboard', name: 'Cluster Metrics', icon: Cpu, description: 'CPU, RAM & allocation gauges' },
   { id: 'statefulsets', name: 'StatefulSets', icon: HardDrive, description: 'Persistent stateful workloads' },
   { id: 'daemonsets', name: 'DaemonSets', icon: Shield, description: 'Node-level agent workloads' },
+  { id: 'jobs', name: 'Jobs', icon: RefreshCw, description: 'Batch tasks & one-off executions' },
   { id: 'cronjobs', name: 'CronJobs', icon: Clock, description: 'Scheduled tasks & jobs' },
   { id: 'helm-releases', name: 'Helm Releases', icon: Box, description: 'Chart application lifecycle' },
 ];

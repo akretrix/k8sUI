@@ -716,6 +716,184 @@ pub async fn delete_resource(
 }
 
 #[tauri::command]
+pub async fn trigger_cronjob(
+    name: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<String>, String> {
+    if state.session.is_read_only().await {
+        return Ok(ApiResponse::err(
+            "Cannot trigger CronJob in Read-Only Mode. Unlock write access.".to_string(),
+        ));
+    }
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr.trigger_cronjob(&name, &namespace).await {
+        Ok(job_name) => {
+            let (cluster_id, environment) = state
+                .session
+                .get_active_summary()
+                .await
+                .map(|s| (s.id, format!("{:?}", s.environment)))
+                .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
+            state
+                .audit
+                .log(
+                    &cluster_id,
+                    &environment,
+                    "trigger_cronjob",
+                    &format!("cronjob/{}", name),
+                    "manual",
+                    Some(&format!("Triggered manual Job {} from CronJob {}", job_name, name)),
+                    "success",
+                )
+                .await;
+            Ok(ApiResponse::ok(job_name))
+        }
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn suspend_cronjob(
+    name: String,
+    namespace: String,
+    suspend: bool,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<bool>, String> {
+    if state.session.is_read_only().await {
+        return Ok(ApiResponse::err(
+            "Cannot suspend/resume CronJob in Read-Only Mode. Unlock write access.".to_string(),
+        ));
+    }
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr.suspend_cronjob(&name, &namespace, suspend).await {
+        Ok(res) => {
+            let (cluster_id, environment) = state
+                .session
+                .get_active_summary()
+                .await
+                .map(|s| (s.id, format!("{:?}", s.environment)))
+                .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
+            let action_label = if suspend { "suspend_cronjob" } else { "resume_cronjob" };
+            let msg = if suspend {
+                format!("Suspended CronJob {}", name)
+            } else {
+                format!("Resumed CronJob {}", name)
+            };
+            state
+                .audit
+                .log(
+                    &cluster_id,
+                    &environment,
+                    action_label,
+                    &format!("cronjob/{}", name),
+                    "manual",
+                    Some(&msg),
+                    "success",
+                )
+                .await;
+            Ok(ApiResponse::ok(res))
+        }
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn suspend_job(
+    name: String,
+    namespace: String,
+    suspend: bool,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<bool>, String> {
+    if state.session.is_read_only().await {
+        return Ok(ApiResponse::err(
+            "Cannot suspend/resume Job in Read-Only Mode. Unlock write access.".to_string(),
+        ));
+    }
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr.suspend_job(&name, &namespace, suspend).await {
+        Ok(res) => {
+            let (cluster_id, environment) = state
+                .session
+                .get_active_summary()
+                .await
+                .map(|s| (s.id, format!("{:?}", s.environment)))
+                .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
+            let action_label = if suspend { "suspend_job" } else { "resume_job" };
+            let msg = if suspend {
+                format!("Suspended Job {}", name)
+            } else {
+                format!("Resumed Job {}", name)
+            };
+            state
+                .audit
+                .log(
+                    &cluster_id,
+                    &environment,
+                    action_label,
+                    &format!("job/{}", name),
+                    "manual",
+                    Some(&msg),
+                    "success",
+                )
+                .await;
+            Ok(ApiResponse::ok(res))
+        }
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn rerun_job(
+    name: String,
+    namespace: String,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<String>, String> {
+    if state.session.is_read_only().await {
+        return Ok(ApiResponse::err(
+            "Cannot rerun Job in Read-Only Mode. Unlock write access.".to_string(),
+        ));
+    }
+    let mgr = match state.session.get_resource_manager().await {
+        Ok(m) => m,
+        Err(e) => return Ok(ApiResponse::err(e.to_string())),
+    };
+    match mgr.rerun_job(&name, &namespace).await {
+        Ok(new_job_name) => {
+            let (cluster_id, environment) = state
+                .session
+                .get_active_summary()
+                .await
+                .map(|s| (s.id, format!("{:?}", s.environment)))
+                .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
+            state
+                .audit
+                .log(
+                    &cluster_id,
+                    &environment,
+                    "rerun_job",
+                    &format!("job/{}", name),
+                    "manual",
+                    Some(&format!("Rerun Job {} as new Job {}", name, new_job_name)),
+                    "success",
+                )
+                .await;
+            Ok(ApiResponse::ok(new_job_name))
+        }
+        Err(e) => Ok(ApiResponse::err(e.to_string())),
+    }
+}
+
+#[tauri::command]
 pub async fn get_cluster_overview(
     state: State<'_, AppState>,
 ) -> Result<ApiResponse<crate::connector::ClusterOverviewData>, String> {

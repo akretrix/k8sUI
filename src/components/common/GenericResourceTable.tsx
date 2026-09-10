@@ -9,7 +9,7 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { api } from '../../api/tauriClient';
-import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink } from 'lucide-react';
+import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box } from 'lucide-react';
 import { NamespaceMultiSelect } from './NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { HelmInstallModal } from '../helm/HelmInstallModal';
@@ -29,6 +29,12 @@ interface GenericResourceTableProps {
   onLogs?: (resource: any) => void;
   onRestart?: (resource: any) => void;
   onScale?: (resource: any) => void;
+  onTriggerCronJob?: (resource: any) => void;
+  onSuspendCronJob?: (resource: any, suspend: boolean) => void;
+  onViewChildJobs?: (resource: any) => void;
+  onRerunJob?: (resource: any) => void;
+  onSuspendJob?: (resource: any, suspend: boolean) => void;
+  onViewChildPods?: (resource: any) => void;
   onReconnect?: () => void;
   onSsoLogin?: () => void;
 }
@@ -50,6 +56,12 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
   onLogs,
   onRestart,
   onScale,
+  onTriggerCronJob,
+  onSuspendCronJob,
+  onViewChildJobs,
+  onRerunJob,
+  onSuspendJob,
+  onViewChildPods,
   onReconnect,
   onSsoLogin,
 }) => {
@@ -237,14 +249,59 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
       }
     } else if (['jobs', 'job'].includes(k)) {
       cols.push(
-        columnHelper.accessor('completions', { header: 'Completions', cell: (info) => <span className="text-xs font-mono text-gray-200">{info.getValue() || '-'}</span> })
+        columnHelper.accessor('completions', { header: 'Completions', cell: (info) => <span className="text-xs font-mono text-gray-200">{info.getValue() || '-'}</span> }),
+        columnHelper.accessor('duration', { header: 'Duration', cell: (info) => <span className="text-xs font-mono text-cyan-300">{info.getValue() || '-'}</span> })
       );
     } else if (['cronjobs', 'cronjob', 'cj'].includes(k)) {
       cols.push(
-        columnHelper.accessor('schedule', { header: 'Schedule', cell: (info) => <span className="text-xs font-mono text-brand-300">{info.getValue() || '-'}</span> }),
+        columnHelper.accessor('schedule', {
+          header: 'Schedule',
+          cell: (info) => (
+            <span className="text-xs font-mono text-brand-300 font-semibold flex items-center space-x-1">
+              <span>{info.getValue() || '-'}</span>
+            </span>
+          ),
+        }),
         columnHelper.accessor('suspend', {
           header: 'Suspend',
-          cell: (info) => <span className="text-xs text-gray-400">{info.getValue() ? 'True' : 'False'}</span>,
+          cell: (info) => {
+            const isSuspended = Boolean(info.getValue());
+            return (
+              <button
+                type="button"
+                disabled={isReadOnly}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onSuspendCronJob) {
+                    onSuspendCronJob(info.row.original, !isSuspended);
+                  }
+                }}
+                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-medium border transition-colors ${
+                  isSuspended
+                    ? 'bg-amber-950/60 text-amber-300 border-amber-800/70 hover:bg-amber-900/60'
+                    : 'bg-emerald-950/60 text-emerald-300 border-emerald-800/70 hover:bg-emerald-900/60'
+                } ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}`}
+                title={isReadOnly ? 'Read-Only Mode' : `Click to ${isSuspended ? 'Resume' : 'Suspend'}`}
+              >
+                {isSuspended ? 'Suspended' : 'Active'}
+              </button>
+            );
+          },
+        }),
+        columnHelper.accessor('active', {
+          header: 'Active',
+          cell: (info) => {
+            const val = info.getValue() ?? 0;
+            return (
+              <span className={`text-xs font-mono ${val > 0 ? 'text-emerald-400 font-bold' : 'text-gray-400'}`}>
+                {val}
+              </span>
+            );
+          },
+        }),
+        columnHelper.accessor('lastScheduleTime', {
+          header: 'Last Schedule',
+          cell: (info) => <span className="text-xs font-mono text-gray-300">{info.getValue() || '-'}</span>,
         })
       );
     } else if (['services', 'service', 'svc'].includes(k)) {
@@ -523,11 +580,21 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
             val.includes('Ready') ||
             val.includes('Normal') ||
             val.includes('Bound') ||
+            val.includes('Complete') ||
             val.includes('Completed') ||
             val.includes('deployed') ||
             val.includes('True') ||
             val === '-';
-          const colorClass = isHealthy
+          const isRunning = val.includes('Running');
+          const isSuspended = val.includes('Suspended');
+          const isFailed = val.includes('Failed') || val.includes('Error') || val.includes('Crash');
+          const colorClass = isFailed
+            ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+            : isSuspended
+            ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+            : isRunning
+            ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+            : isHealthy
             ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
             : 'bg-amber-500/15 text-amber-400 border-amber-500/30';
 
@@ -600,6 +667,98 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
                 </button>
               )}
+              {['cronjobs', 'cronjob', 'cj'].includes(kind.toLowerCase()) && (
+                <>
+                  <button
+                    onClick={() => { if (onTriggerCronJob) onTriggerCronJob(row); }}
+                    disabled={isReadOnly}
+                    className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                      isReadOnly
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-emerald-400 hover:text-emerald-300'
+                    }`}
+                    title={isReadOnly ? 'Read-Only Mode' : 'Run Now (Trigger Manual Job)'}
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                  </button>
+                  <button
+                    onClick={() => { if (onSuspendCronJob) onSuspendCronJob(row, !row.suspend); }}
+                    disabled={isReadOnly}
+                    className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                      isReadOnly
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : row.suspend
+                        ? 'text-emerald-400 hover:text-emerald-300'
+                        : 'text-amber-400 hover:text-amber-300'
+                    }`}
+                    title={
+                      isReadOnly
+                        ? 'Read-Only Mode'
+                        : row.suspend
+                        ? 'Resume CronJob Schedule'
+                        : 'Suspend CronJob Schedule'
+                    }
+                  >
+                    {row.suspend ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                  </button>
+                  {onViewChildJobs && (
+                    <button
+                      onClick={() => onViewChildJobs(row)}
+                      className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-brand-300 transition-colors"
+                      title="View Child Jobs"
+                    >
+                      <Clock className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              )}
+              {['jobs', 'job'].includes(kind.toLowerCase()) && (
+                <>
+                  <button
+                    onClick={() => { if (onRerunJob) onRerunJob(row); }}
+                    disabled={isReadOnly}
+                    className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                      isReadOnly
+                        ? 'text-gray-600 cursor-not-allowed'
+                        : 'text-brand-400 hover:text-brand-300'
+                    }`}
+                    title={isReadOnly ? 'Read-Only Mode' : 'Rerun Job'}
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  {onViewChildPods && (
+                    <button
+                      onClick={() => onViewChildPods(row)}
+                      className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-cyan-300 transition-colors"
+                      title="View Associated Pods"
+                    >
+                      <Box className="w-4 h-4" />
+                    </button>
+                  )}
+                  {onSuspendJob && (
+                    <button
+                      onClick={() => onSuspendJob(row, !row.suspend)}
+                      disabled={isReadOnly}
+                      className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                        isReadOnly
+                          ? 'text-gray-600 cursor-not-allowed'
+                          : row.suspend
+                          ? 'text-emerald-400 hover:text-emerald-300'
+                          : 'text-amber-400 hover:text-amber-300'
+                      }`}
+                      title={
+                        isReadOnly
+                          ? 'Read-Only Mode'
+                          : row.suspend
+                          ? 'Resume Job'
+                          : 'Suspend Active Job'
+                      }
+                    >
+                      {row.suspend ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 onClick={() => onViewYaml(row)}
                 className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-brand-300 transition-colors"
@@ -621,7 +780,24 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
     );
 
     return cols;
-  }, [kind, isClusterScoped, rawResources, onDescribe, onScale, onRestart, onLogs, onViewYaml, onDelete]);
+  }, [
+    kind,
+    isClusterScoped,
+    rawResources,
+    onDescribe,
+    onScale,
+    onRestart,
+    onLogs,
+    onViewYaml,
+    onDelete,
+    onTriggerCronJob,
+    onSuspendCronJob,
+    onViewChildJobs,
+    onRerunJob,
+    onSuspendJob,
+    onViewChildPods,
+    isReadOnly,
+  ]);
 
   const handleColumnVisibilityChange = (updatedCols: ColumnDefinition[]) => {
     const nextMap: Record<string, boolean> = {};

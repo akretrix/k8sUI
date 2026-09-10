@@ -578,9 +578,9 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
         } else if (kind === 'replicasets') {
           extra = { ready: '3/3', desired: 3, status: 'Ready' };
         } else if (kind === 'jobs') {
-          extra = { completions: '1/1', status: 'Completed' };
+          extra = { completions: '1/1', duration: '1m 24s', suspend: false, status: i % 2 === 0 ? 'Complete' : 'Running' };
         } else if (kind === 'cronjobs') {
-          extra = { schedule: '0 * * * *', suspend: false, status: 'Active' };
+          extra = { schedule: '0 * * * *', suspend: false, active: 0, lastScheduleTime: '12m ago', concurrencyPolicy: 'Allow', status: 'Active' };
         } else if (kind === 'services') {
           extra = { type: i === 1 ? 'LoadBalancer' : 'ClusterIP', clusterIP: `10.96.1.${i}`, externalIP: i === 1 ? '203.0.113.5' : '<none>', ports: '80/TCP' };
         } else if (kind === 'configmaps') {
@@ -869,8 +869,18 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
     }
 
     case 'restart_resource':
-    case 'delete_resource': {
+    case 'delete_resource':
+    case 'suspend_cronjob':
+    case 'suspend_job': {
       return true;
+    }
+
+    case 'trigger_cronjob': {
+      return `${args.name || 'cronjob'}-manual-${Date.now().toString().slice(-6)}`;
+    }
+
+    case 'rerun_job': {
+      return `${args.name || 'job'}-retry-${Date.now().toString().slice(-6)}`;
     }
 
     case 'get_cluster_overview': {
@@ -1250,6 +1260,10 @@ export const api = {
   scaleResource: (kind: string, name: string, namespace: string, replicas: number) => invokeTauri<any>('scale_resource', { kind, name, namespace, replicas }),
   restartResource: (kind: string, name: string, namespace: string) => invokeTauri<boolean>('restart_resource', { kind, name, namespace }),
   deleteResource: (kind: string, name: string, namespace?: string) => invokeTauri<boolean>('delete_resource', { kind, name, namespace }),
+  triggerCronJob: (name: string, namespace: string) => invokeTauri<string>('trigger_cronjob', { name, namespace }),
+  suspendCronJob: (name: string, namespace: string, suspend: boolean) => invokeTauri<boolean>('suspend_cronjob', { name, namespace, suspend }),
+  suspendJob: (name: string, namespace: string, suspend: boolean) => invokeTauri<boolean>('suspend_job', { name, namespace, suspend }),
+  rerunJob: (name: string, namespace: string) => invokeTauri<string>('rerun_job', { name, namespace }),
   describeResource: (kind: string, name: string, namespace?: string) => invokeTauri<string>('describe_resource', { kind, name, namespace }),
   getResourceEvents: (kind: string, name: string, namespace?: string) => invokeTauri<any[]>('get_resource_events', { kind, name, namespace }),
   getResourceYaml: (kind: string, name: string, namespace?: string) => invokeTauri<string>('get_resource_yaml', { kind, name, namespace }),

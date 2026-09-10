@@ -20,7 +20,7 @@ import { PendingAiProposal, PodSummary, ClusterContextSummary, ActivePortForward
 import { AppTab, RESOURCE_TITLES } from './types/tabs';
 import { TabBar } from './components/layout/TabBar';
 import { NewTabModal } from './components/layout/NewTabModal';
-import { ConfirmationModal } from './components/common/ConfirmationModal';
+import { ConfirmationModal, ConfirmationActionType } from './components/common/ConfirmationModal';
 import { ScaleModal, ScaleTarget } from './components/common/ScaleModal';
 import { DesignSystemShowcase } from './components/design-system/DesignSystemShowcase';
 import { AwsSsoModal } from './components/cluster/AwsSsoModal';
@@ -214,7 +214,7 @@ export const App: React.FC = () => {
   };
   const [selectedScaleTarget, setSelectedScaleTarget] = useState<ScaleTarget | null>(null);
   const [confirmationTarget, setConfirmationTarget] = useState<{
-    actionType: 'delete' | 'restart';
+    actionType: ConfirmationActionType;
     resourceKind: string;
     resourceName: string;
     namespace?: string;
@@ -671,21 +671,111 @@ export const App: React.FC = () => {
     },
   });
 
+  const triggerCronJobMutation = useMutation({
+    mutationFn: ({ name, namespace }: { name: string; namespace: string }) =>
+      api.triggerCronJob(name, namespace),
+    onSuccess: (jobName) => {
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+      setConfirmationTarget(null);
+      handleSelectResource('jobs', false);
+      handleSetFilterQuery(jobName);
+    },
+  });
+
+  const suspendCronJobMutation = useMutation({
+    mutationFn: ({ name, namespace, suspend }: { name: string; namespace: string; suspend: boolean }) =>
+      api.suspendCronJob(name, namespace, suspend),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+      setConfirmationTarget(null);
+    },
+  });
+
+  const rerunJobMutation = useMutation({
+    mutationFn: ({ name, namespace }: { name: string; namespace: string }) =>
+      api.rerunJob(name, namespace),
+    onSuccess: (newJobName) => {
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+      setConfirmationTarget(null);
+      handleSetFilterQuery(newJobName);
+    },
+  });
+
+  const suspendJobMutation = useMutation({
+    mutationFn: ({ name, namespace, suspend }: { name: string; namespace: string; suspend: boolean }) =>
+      api.suspendJob(name, namespace, suspend),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['resources'] });
+      queryClient.invalidateQueries({ queryKey: ['auditLogs'] });
+      setConfirmationTarget(null);
+    },
+  });
+
   const handleExecuteConfirmation = async () => {
     if (!confirmationTarget) return;
-    if (confirmationTarget.actionType === 'restart') {
+    const { actionType, resourceKind, resourceName, namespace } = confirmationTarget;
+    const ns = namespace || 'default';
+
+    if (actionType === 'restart') {
       await restartMutation.mutateAsync({
-        kind: confirmationTarget.resourceKind,
-        name: confirmationTarget.resourceName,
-        namespace: confirmationTarget.namespace || 'default',
+        kind: resourceKind,
+        name: resourceName,
+        namespace: ns,
+      });
+    } else if (actionType === 'trigger_job') {
+      await triggerCronJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+      });
+    } else if (actionType === 'suspend_cronjob') {
+      await suspendCronJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+        suspend: true,
+      });
+    } else if (actionType === 'resume_cronjob') {
+      await suspendCronJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+        suspend: false,
+      });
+    } else if (actionType === 'rerun_job') {
+      await rerunJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+      });
+    } else if (actionType === 'suspend_job') {
+      await suspendJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+        suspend: true,
+      });
+    } else if (actionType === 'resume_job') {
+      await suspendJobMutation.mutateAsync({
+        name: resourceName,
+        namespace: ns,
+        suspend: false,
       });
     } else {
       await deleteMutation.mutateAsync({
-        kind: confirmationTarget.resourceKind,
-        name: confirmationTarget.resourceName,
-        namespace: confirmationTarget.namespace,
+        kind: resourceKind,
+        name: resourceName,
+        namespace,
       });
     }
+  };
+
+  const handleViewChildJobs = (cronjob: any) => {
+    handleSelectResource('jobs', false);
+    handleSetFilterQuery(cronjob.name);
+  };
+
+  const handleViewChildPods = (job: any) => {
+    handleSelectResource('pods', false);
+    handleSetFilterQuery(job.name);
   };
 
   // Action handlers
@@ -978,6 +1068,40 @@ export const App: React.FC = () => {
                     namespace: res.namespace || 'default',
                   })
                 }
+                onTriggerCronJob={(res) =>
+                  setConfirmationTarget({
+                    actionType: 'trigger_job',
+                    resourceKind: 'CronJob',
+                    resourceName: res.name,
+                    namespace: res.namespace || 'default',
+                  })
+                }
+                onSuspendCronJob={(res, suspend) =>
+                  setConfirmationTarget({
+                    actionType: suspend ? 'suspend_cronjob' : 'resume_cronjob',
+                    resourceKind: 'CronJob',
+                    resourceName: res.name,
+                    namespace: res.namespace || 'default',
+                  })
+                }
+                onViewChildJobs={handleViewChildJobs}
+                onRerunJob={(res) =>
+                  setConfirmationTarget({
+                    actionType: 'rerun_job',
+                    resourceKind: 'Job',
+                    resourceName: res.name,
+                    namespace: res.namespace || 'default',
+                  })
+                }
+                onSuspendJob={(res, suspend) =>
+                  setConfirmationTarget({
+                    actionType: suspend ? 'suspend_job' : 'resume_job',
+                    resourceKind: 'Job',
+                    resourceName: res.name,
+                    namespace: res.namespace || 'default',
+                  })
+                }
+                onViewChildPods={handleViewChildPods}
                 onReconnect={handleReconnect}
                 onSsoLogin={handleAwsSsoBrowserLogin}
               />

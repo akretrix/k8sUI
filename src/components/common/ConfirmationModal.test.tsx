@@ -97,4 +97,62 @@ describe('ConfirmationModal', () => {
       screen.getByText(/Cannot execute mutations in Read-Only mode/i)
     ).toBeInTheDocument();
   });
+
+  it('renders trigger_job modal and allows executing Run Now without typing name', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        actionType="trigger_job"
+        resourceKind="CronJob"
+        resourceName="nightly-backup"
+        namespace="ops"
+        isReadOnly={false}
+      />
+    );
+
+    expect(screen.getByText('Trigger Run: CronJob')).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to trigger an on-demand run/i)).toBeInTheDocument();
+
+    const runButton = screen.getByRole('button', { name: /Run Job Now/i });
+    expect(runButton).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(runButton);
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders suspend_cronjob modal and allows executing Suspend without typing name', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        actionType="suspend_cronjob"
+        resourceKind="CronJob"
+        resourceName="nightly-backup"
+        namespace="ops"
+        isReadOnly={false}
+      />
+    );
+
+    expect(screen.getByText('Suspend CronJob')).toBeInTheDocument();
+    expect(screen.getByText(/Future scheduled runs will be paused until resumed/i)).toBeInTheDocument();
+
+    const suspendButton = screen.getByRole('button', { name: /Confirm Suspend/i });
+    expect(suspendButton).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(suspendButton);
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });
