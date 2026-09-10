@@ -43,6 +43,9 @@ import {
   Bell,
   AlertTriangle,
   CheckCircle2,
+  Play,
+  Pause,
+  Briefcase,
 } from 'lucide-react';
 import { load as yamlLoad } from 'js-yaml';
 import { api, SecretDetails, HelmReleaseDetails, PodSummary } from '../../api/tauriClient';
@@ -71,6 +74,14 @@ interface DescribeModalProps {
   onScale?: (resource: any) => void;
   onDelete?: (resource: any) => void;
   onExec?: (resource: any, containerName?: string) => void;
+  // Batch actions – CronJob
+  onTriggerCronJob?: (resource: any) => void;
+  onSuspendCronJob?: (resource: any, suspend: boolean) => void;
+  onViewChildJobs?: (resource: any) => void;
+  // Batch actions – Job
+  onRerunJob?: (resource: any) => void;
+  onSuspendJob?: (resource: any, suspend: boolean) => void;
+  onViewChildPods?: (resource: any) => void;
 }
 
 function formatCreationDate(timestamp?: string): { formatted: string; full: string; age: string } | null {
@@ -116,6 +127,12 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   onScale,
   onDelete,
   onExec,
+  onTriggerCronJob,
+  onSuspendCronJob,
+  onViewChildJobs,
+  onRerunJob,
+  onSuspendJob,
+  onViewChildPods,
 }) => {
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -489,7 +506,10 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
   const isHelmRelease = ['helm', 'helmrelease', 'helm-releases', 'helmreleases'].includes(normalizedKind);
   const isNode = ['node', 'nodes'].includes(normalizedKind);
   const isService = !isHelmRelease && !isNode && ['service', 'services'].includes(normalizedKind);
-  const isPodOrWorkload = !isHelmRelease && !isNode && !isService && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
+  const isCronJob = ['cronjob', 'cronjobs', 'cj'].includes(normalizedKind);
+  const isJob = !isCronJob && ['job', 'jobs'].includes(normalizedKind);
+  const isSuspended = !!(parsedData?.spec?.suspend ?? currentResource?.suspend);
+  const isPodOrWorkload = !isHelmRelease && !isNode && !isService && !isCronJob && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
   const hasLogs = !isHelmRelease && !isNode && ['pod', 'pods', 'deployment', 'deployments', 'statefulset', 'statefulsets', 'daemonset', 'daemonsets', 'job', 'jobs'].includes(normalizedKind);
   const hasPortForward = !isHelmRelease && !isNode && ['pod', 'pods', 'service', 'services'].includes(normalizedKind);
   const hasScale = !isHelmRelease && !isNode && ['deployment', 'deployments', 'statefulset', 'statefulsets'].includes(normalizedKind);
@@ -914,6 +934,100 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                 <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Rollback</span>
               </button>
+            )}
+
+            {/* CronJob Actions */}
+            {isCronJob && (
+              <>
+                <button
+                  onClick={() => { if (onTriggerCronJob) { onTriggerCronJob(currentResource); onClose(); } }}
+                  disabled={isReadOnly}
+                  className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
+                    isReadOnly
+                      ? 'opacity-40 cursor-not-allowed bg-surface-elevated border-border text-gray-400'
+                      : 'bg-emerald-950/40 hover:bg-emerald-900/60 border-emerald-800/80 text-emerald-300 hover:text-emerald-200'
+                  }`}
+                  title={isReadOnly ? 'Unlock Read-Only Mode to trigger' : 'Run Now (manual trigger)'}
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Run Now</span>
+                </button>
+
+                <button
+                  onClick={() => { if (onSuspendCronJob) { onSuspendCronJob(currentResource, !isSuspended); onClose(); } }}
+                  disabled={isReadOnly}
+                  className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
+                    isReadOnly
+                      ? 'opacity-40 cursor-not-allowed bg-surface-elevated border-border text-gray-400'
+                      : isSuspended
+                      ? 'bg-emerald-950/40 hover:bg-emerald-900/60 border-emerald-800/80 text-emerald-300 hover:text-emerald-200'
+                      : 'bg-amber-950/40 hover:bg-amber-900/60 border-amber-800/80 text-amber-300 hover:text-amber-200'
+                  }`}
+                  title={isReadOnly ? 'Unlock Read-Only Mode' : isSuspended ? 'Resume CronJob Schedule' : 'Suspend CronJob Schedule'}
+                >
+                  {isSuspended ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                  <span>{isSuspended ? 'Resume' : 'Suspend'}</span>
+                </button>
+
+                {onViewChildJobs && (
+                  <button
+                    onClick={() => { onViewChildJobs(currentResource); onClose(); }}
+                    className="px-2.5 py-1.5 rounded-md bg-surface-elevated hover:bg-surface-hover border border-border text-xs font-medium text-brand-300 hover:text-brand-200 transition-colors flex items-center space-x-1.5"
+                    title="View Child Jobs"
+                  >
+                    <Briefcase className="w-3.5 h-3.5 text-brand-400" />
+                    <span>Child Jobs</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Job Actions */}
+            {isJob && (
+              <>
+                <button
+                  onClick={() => { if (onRerunJob) { onRerunJob(currentResource); onClose(); } }}
+                  disabled={isReadOnly}
+                  className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
+                    isReadOnly
+                      ? 'opacity-40 cursor-not-allowed bg-surface-elevated border-border text-gray-400'
+                      : 'bg-brand-950/40 hover:bg-brand-900/60 border-brand-800/80 text-brand-300 hover:text-brand-200'
+                  }`}
+                  title={isReadOnly ? 'Unlock Read-Only Mode to rerun' : 'Rerun Job'}
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Rerun</span>
+                </button>
+
+                {onSuspendJob && (
+                  <button
+                    onClick={() => { onSuspendJob(currentResource, !isSuspended); onClose(); }}
+                    disabled={isReadOnly}
+                    className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
+                      isReadOnly
+                        ? 'opacity-40 cursor-not-allowed bg-surface-elevated border-border text-gray-400'
+                        : isSuspended
+                        ? 'bg-emerald-950/40 hover:bg-emerald-900/60 border-emerald-800/80 text-emerald-300 hover:text-emerald-200'
+                        : 'bg-amber-950/40 hover:bg-amber-900/60 border-amber-800/80 text-amber-300 hover:text-amber-200'
+                    }`}
+                    title={isReadOnly ? 'Unlock Read-Only Mode' : isSuspended ? 'Resume Job' : 'Suspend Job'}
+                  >
+                    {isSuspended ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+                    <span>{isSuspended ? 'Resume' : 'Suspend'}</span>
+                  </button>
+                )}
+
+                {onViewChildPods && (
+                  <button
+                    onClick={() => { onViewChildPods(currentResource); onClose(); }}
+                    className="px-2.5 py-1.5 rounded-md bg-surface-elevated hover:bg-surface-hover border border-border text-xs font-medium text-cyan-300 hover:text-cyan-200 transition-colors flex items-center space-x-1.5"
+                    title="View Associated Pods"
+                  >
+                    <Box className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Pods</span>
+                  </button>
+                )}
+              </>
             )}
 
             {/* Helm Uninstall / Delete */}
@@ -2051,6 +2165,187 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                     labels={labels}
                     annotations={annotations}
                   />
+                </div>
+              ) : isCronJob ? (
+                <div className="space-y-6">
+                  {/* CronJob Overview Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Schedule</span>
+                      <div className="text-xs font-bold font-mono text-cyan-300 truncate" title={parsedData?.spec?.schedule}>
+                        {parsedData?.spec?.schedule || currentResource?.schedule || '—'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Status</span>
+                      <div className={`text-xs font-bold font-mono ${isSuspended ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {isSuspended ? '⏸ Suspended' : '▶ Active'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Concurrency</span>
+                      <div className="text-xs font-bold font-mono text-indigo-300">
+                        {parsedData?.spec?.concurrencyPolicy || currentResource?.concurrencyPolicy || 'Allow'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Active Jobs</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.status?.active ?? currentResource?.active ?? 0}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1 col-span-2">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Last Scheduled</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.status?.lastScheduleTime || currentResource?.lastScheduleTime
+                          ? new Date(parsedData?.status?.lastScheduleTime || currentResource?.lastScheduleTime).toLocaleString()
+                          : '—'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Successful Limit</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.spec?.successfulJobsHistoryLimit ?? 3}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Failed Limit</span>
+                      <div className="text-xs font-bold font-mono text-rose-300">
+                        {parsedData?.spec?.failedJobsHistoryLimit ?? 1}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Actions Banner */}
+                  <div className="flex items-center space-x-3 p-3.5 rounded-xl bg-surface border border-border/60">
+                    <Clock className="w-4 h-4 text-cyan-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-200">Batch Actions</p>
+                      <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                        Use <span className="text-emerald-400">Run Now</span> to trigger a manual job,{' '}
+                        <span className="text-amber-400">{isSuspended ? 'Resume' : 'Suspend'}</span> to toggle the schedule, or{' '}
+                        <span className="text-brand-400">Child Jobs</span> to drill down.
+                      </p>
+                    </div>
+                    {!isReadOnly && onTriggerCronJob && (
+                      <button
+                        onClick={() => { onTriggerCronJob(currentResource); onClose(); }}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-600/40 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Run Now</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Labels & Annotations */}
+                  <MetadataLabelsAnnotations labels={labels} annotations={annotations} />
+                </div>
+              ) : isJob ? (
+                <div className="space-y-6">
+                  {/* Job Overview Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Completions</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.status?.succeeded ?? 0} / {parsedData?.spec?.completions ?? currentResource?.completions ?? 1}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Status</span>
+                      <div className={`text-xs font-bold font-mono ${
+                        (parsedData?.status?.conditions || []).some((c: any) => c.type === 'Failed' && c.status === 'True')
+                          ? 'text-rose-400'
+                          : (parsedData?.status?.conditions || []).some((c: any) => c.type === 'Complete' && c.status === 'True')
+                          ? 'text-emerald-400'
+                          : isSuspended
+                          ? 'text-amber-400'
+                          : 'text-blue-400'
+                      }`}>
+                        {(parsedData?.status?.conditions || []).some((c: any) => c.type === 'Failed' && c.status === 'True')
+                          ? '✗ Failed'
+                          : (parsedData?.status?.conditions || []).some((c: any) => c.type === 'Complete' && c.status === 'True')
+                          ? '✓ Completed'
+                          : isSuspended
+                          ? '⏸ Suspended'
+                          : '⟳ Running'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Parallelism</span>
+                      <div className="text-xs font-bold font-mono text-indigo-300">
+                        {parsedData?.spec?.parallelism ?? 1}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Duration</span>
+                      <div className="text-xs font-bold font-mono text-cyan-300">
+                        {currentResource?.duration || '—'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1 col-span-2">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Start Time</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.status?.startTime
+                          ? new Date(parsedData.status.startTime).toLocaleString()
+                          : '—'}
+                      </div>
+                    </div>
+                    <div className="bg-surface p-3 rounded-xl border border-border/80 space-y-1 col-span-2">
+                      <span className="text-[11px] text-gray-400 uppercase font-mono">Completion Time</span>
+                      <div className="text-xs font-bold font-mono text-gray-200">
+                        {parsedData?.status?.completionTime
+                          ? new Date(parsedData.status.completionTime).toLocaleString()
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Actions Banner */}
+                  <div className="flex items-center space-x-3 p-3.5 rounded-xl bg-surface border border-border/60">
+                    <Briefcase className="w-4 h-4 text-brand-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-200">Batch Actions</p>
+                      <p className="text-[11px] text-gray-400 font-mono mt-0.5">
+                        Use <span className="text-brand-400">Rerun</span> to re-create this job,{' '}
+                        <span className="text-amber-400">{isSuspended ? 'Resume' : 'Suspend'}</span> to toggle execution, or{' '}
+                        <span className="text-cyan-400">Pods</span> to inspect associated pods.
+                      </p>
+                    </div>
+                    {!isReadOnly && onRerunJob && (
+                      <button
+                        onClick={() => { onRerunJob(currentResource); onClose(); }}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-brand-600/20 hover:bg-brand-600/30 border border-brand-600/40 text-brand-300 text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Rerun</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Job Conditions */}
+                  {(parsedData?.status?.conditions || []).length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-gray-300 font-mono flex items-center space-x-2">
+                        <Activity className="w-4 h-4 text-blue-400" />
+                        <span>Conditions</span>
+                      </h3>
+                      <div className="space-y-1">
+                        {(parsedData?.status?.conditions || []).map((cond: any, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between px-3 py-2 rounded-lg bg-surface border border-border/60 text-xs font-mono">
+                            <span className={cond.status === 'True' ? 'text-emerald-400' : 'text-gray-400'}>{cond.type}</span>
+                            <span className="text-gray-500">{cond.reason}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              cond.status === 'True' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-gray-500/15 text-gray-400'
+                            }`}>{cond.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Labels & Annotations */}
+                  <MetadataLabelsAnnotations labels={labels} annotations={annotations} />
                 </div>
               ) : isPodOrWorkload && containers.length > 0 ? (
                 <div className="space-y-6">

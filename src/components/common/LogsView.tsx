@@ -6,6 +6,8 @@ import {
   Clock,
   RotateCcw,
   Loader2,
+  ChevronsDown,
+  ChevronsUp,
 } from 'lucide-react';
 import { api, isTauri } from '../../api/tauriClient';
 import { PodSummary } from '../../types/cluster';
@@ -66,6 +68,9 @@ export const LogsView: React.FC<LogsViewProps> = ({
   const [wrapLines, setWrapLines] = useState(true);
   const [tailLines, setTailLines] = useState<number | null>(1000);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Scroll position state for jump buttons
+  const [isAtTop, setIsAtTop] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const isFetchingRef = useRef(false);
@@ -288,10 +293,26 @@ export const LogsView: React.FC<LogsViewProps> = ({
     if (!terminalRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = terminalRef.current;
     const atBottom = scrollHeight - scrollTop - clientHeight < 60;
+    const atTop = scrollTop < 60;
     if (atBottom !== isFollowing) {
       setIsFollowing(atBottom);
     }
+    setIsAtBottom(atBottom);
+    setIsAtTop(atTop);
   }, [isFollowing]);
+
+  const scrollToBottom = useCallback(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTo({ top: terminalRef.current.scrollHeight, behavior: 'smooth' });
+    }
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, []);
+
 
   const download = async () => {
     const defaultName = `${resourceName}${container !== 'all' ? `-${container}` : ''}.log`;
@@ -613,90 +634,116 @@ export const LogsView: React.FC<LogsViewProps> = ({
       </div>
 
       {/* Terminal Area */}
-      <div
-        ref={terminalRef}
-        onScroll={handleScroll}
-        className="flex-1 p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300"
-      >
-        {/* Terminal Area Top Notice / Expansion Controls */}
-        {!error && logs.length > 0 && (
-          <div className="mb-3">
-            {tailLines !== null ? (
-              <div className="p-2 rounded-md bg-surface-elevated/70 border border-border/80 flex items-center justify-between gap-3 text-xs text-gray-400 font-mono">
-                <div className="flex items-center space-x-2 text-gray-300">
-                  <span className="text-gray-500">⬆</span>
-                  <span>
-                    Showing last <strong>{logs.length.toLocaleString()}</strong> lines (tail limit: {tailLines.toLocaleString()}).
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={terminalRef}
+          onScroll={handleScroll}
+          className="h-full p-4 bg-[#07090E] overflow-auto font-mono text-[12px] text-gray-300 select-text [&_::selection]:bg-blue-500/50 [&_::selection]:text-white"
+        >
+          {/* Terminal Area Top Notice / Expansion Controls */}
+          {!error && logs.length > 0 && (
+            <div className="mb-3">
+              {tailLines !== null ? (
+                <div className="p-2 rounded-md bg-surface-elevated/70 border border-border/80 flex items-center justify-between gap-3 text-xs text-gray-400 font-mono">
+                  <div className="flex items-center space-x-2 text-gray-300">
+                    <span className="text-gray-500">⬆</span>
+                    <span>
+                      Showing last <strong>{logs.length.toLocaleString()}</strong> lines (tail limit: {tailLines.toLocaleString()}).
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handleLoadMore(1000)}
+                      disabled={isLoadingMore}
+                      className="px-2.5 py-1 rounded bg-brand-900/60 hover:bg-brand-800 border border-brand-700 text-brand-200 text-xs font-mono transition-colors cursor-pointer flex items-center space-x-1"
+                      title="Fetch 1,000 more earlier lines"
+                    >
+                      {isLoadingMore && <Loader2 className="w-3 h-3 animate-spin" />}
+                      <span>+1,000 earlier lines</span>
+                    </button>
+                    <button
+                      onClick={() => handleLoadAll()}
+                      disabled={isLoadingMore}
+                      className="px-2.5 py-1 rounded bg-surface hover:bg-surface-hover border border-border text-gray-200 text-xs font-mono transition-colors cursor-pointer"
+                      title="Fetch all available logs from container start"
+                    >
+                      <span>Load all logs</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-3 py-1.5 rounded-md bg-surface-elevated/40 border border-border/40 flex items-center justify-between text-xs text-gray-400 font-mono">
+                  <span className="text-gray-400">
+                    Showing <strong>all available logs</strong> ({logs.length.toLocaleString()} lines from container start).
                   </span>
-                </div>
-                <div className="flex items-center space-x-2">
                   <button
-                    onClick={() => handleLoadMore(1000)}
-                    disabled={isLoadingMore}
-                    className="px-2.5 py-1 rounded bg-brand-900/60 hover:bg-brand-800 border border-brand-700 text-brand-200 text-xs font-mono transition-colors cursor-pointer flex items-center space-x-1"
-                    title="Fetch 1,000 more earlier lines"
+                    onClick={() => {
+                      setTailLines(1000);
+                    }}
+                    className="text-[11px] text-gray-400 hover:text-gray-200 underline cursor-pointer"
                   >
-                    {isLoadingMore && <Loader2 className="w-3 h-3 animate-spin" />}
-                    <span>+1,000 earlier lines</span>
-                  </button>
-                  <button
-                    onClick={() => handleLoadAll()}
-                    disabled={isLoadingMore}
-                    className="px-2.5 py-1 rounded bg-surface hover:bg-surface-hover border border-border text-gray-200 text-xs font-mono transition-colors cursor-pointer"
-                    title="Fetch all available logs from container start"
-                  >
-                    <span>Load all logs</span>
+                    Reset to 1,000 lines
                   </button>
                 </div>
+              )}
+            </div>
+          )}
+
+          {error ? (
+            <div className="p-3 bg-rose-950/30 border border-rose-900/60 rounded-lg flex items-start justify-between gap-3 text-xs font-mono">
+              <div className="space-y-1">
+                <div className="font-semibold text-rose-300">Unable to retrieve logs</div>
+                <div className="text-rose-400 text-[11px] whitespace-pre-wrap">{error}</div>
               </div>
-            ) : (
-              <div className="px-3 py-1.5 rounded-md bg-surface-elevated/40 border border-border/40 flex items-center justify-between text-xs text-gray-400 font-mono">
-                <span className="text-gray-400">
-                  Showing <strong>all available logs</strong> ({logs.length.toLocaleString()} lines from container start).
-                </span>
+              {previous && (
                 <button
                   onClick={() => {
-                    setTailLines(1000);
+                    setPrevious(false);
+                    setLogs([]);
+                    setIsFollowing(true);
                   }}
-                  className="text-[11px] text-gray-400 hover:text-gray-200 underline cursor-pointer"
+                  className="px-2.5 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30 text-[11px] shrink-0 transition-colors cursor-pointer"
                 >
-                  Reset to 1,000 lines
+                  Switch to Live Logs
                 </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {error ? (
-          <div className="p-3 bg-rose-950/30 border border-rose-900/60 rounded-lg flex items-start justify-between gap-3 text-xs font-mono">
-            <div className="space-y-1">
-              <div className="font-semibold text-rose-300">Unable to retrieve logs</div>
-              <div className="text-rose-400 text-[11px] whitespace-pre-wrap">{error}</div>
+              )}
             </div>
-            {previous && (
-              <button
-                onClick={() => {
-                  setPrevious(false);
-                  setLogs([]);
-                  setIsFollowing(true);
-                }}
-                className="px-2.5 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30 text-[11px] shrink-0 transition-colors cursor-pointer"
-              >
-                Switch to Live Logs
-              </button>
-            )}
-          </div>
-        ) : (
-          filteredLogs.map((log, i) => (
-            <LogLineItem
-              key={`${i}-${log.length}`}
-              log={log}
-              searchQuery={searchQuery}
-              caseSensitive={caseSensitive}
-              isRegex={isRegex}
-              wrapLines={wrapLines}
-            />
-          ))
+          ) : (
+            filteredLogs.map((log, i) => (
+              <LogLineItem
+                key={`${i}-${log.length}`}
+                log={log}
+                searchQuery={searchQuery}
+                caseSensitive={caseSensitive}
+                isRegex={isRegex}
+                wrapLines={wrapLines}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Floating scroll-jump button */}
+        {!isAtBottom && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-4 z-10 flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-[#1a2235] hover:bg-[#243050] border border-blue-700/50 text-blue-300 hover:text-blue-200 text-xs font-mono shadow-lg shadow-black/40 transition-all duration-150 animate-in fade-in slide-in-from-bottom-2"
+            title="Jump to bottom"
+            aria-label="Scroll to bottom"
+          >
+            <ChevronsDown className="w-3.5 h-3.5" />
+            <span>Jump to bottom</span>
+          </button>
+        )}
+        {isAtBottom && !isAtTop && logs.length > 50 && (
+          <button
+            onClick={scrollToTop}
+            className="absolute bottom-4 right-4 z-10 flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-[#1a2235] hover:bg-[#243050] border border-blue-700/50 text-blue-300 hover:text-blue-200 text-xs font-mono shadow-lg shadow-black/40 transition-all duration-150 animate-in fade-in slide-in-from-bottom-2"
+            title="Jump to top"
+            aria-label="Scroll to top"
+          >
+            <ChevronsUp className="w-3.5 h-3.5" />
+            <span>Jump to top</span>
+          </button>
         )}
       </div>
     </div>

@@ -1157,6 +1157,40 @@ export const App: React.FC = () => {
             namespace: res.namespace || 'default',
           })
         }
+        onTriggerCronJob={(res) =>
+          setConfirmationTarget({
+            actionType: 'trigger_job',
+            resourceKind: 'CronJob',
+            resourceName: res.name,
+            namespace: res.namespace || 'default',
+          })
+        }
+        onSuspendCronJob={(res, suspend) =>
+          setConfirmationTarget({
+            actionType: suspend ? 'suspend_cronjob' : 'resume_cronjob',
+            resourceKind: 'CronJob',
+            resourceName: res.name,
+            namespace: res.namespace || 'default',
+          })
+        }
+        onViewChildJobs={handleViewChildJobs}
+        onRerunJob={(res) =>
+          setConfirmationTarget({
+            actionType: 'rerun_job',
+            resourceKind: 'Job',
+            resourceName: res.name,
+            namespace: res.namespace || 'default',
+          })
+        }
+        onSuspendJob={(res, suspend) =>
+          setConfirmationTarget({
+            actionType: suspend ? 'suspend_job' : 'resume_job',
+            resourceKind: 'Job',
+            resourceName: res.name,
+            namespace: res.namespace || 'default',
+          })
+        }
+        onViewChildPods={handleViewChildPods}
       />
 
       <YamlEditorModal
