@@ -746,7 +746,10 @@ pub async fn trigger_cronjob(
                     "trigger_cronjob",
                     &format!("cronjob/{}", name),
                     "manual",
-                    Some(&format!("Triggered manual Job {} from CronJob {}", job_name, name)),
+                    Some(&format!(
+                        "Triggered manual Job {} from CronJob {}",
+                        job_name, name
+                    )),
                     "success",
                 )
                 .await;
@@ -780,7 +783,11 @@ pub async fn suspend_cronjob(
                 .await
                 .map(|s| (s.id, format!("{:?}", s.environment)))
                 .unwrap_or_else(|| ("unknown".to_string(), "Unknown".to_string()));
-            let action_label = if suspend { "suspend_cronjob" } else { "resume_cronjob" };
+            let action_label = if suspend {
+                "suspend_cronjob"
+            } else {
+                "resume_cronjob"
+            };
             let msg = if suspend {
                 format!("Suspended CronJob {}", name)
             } else {

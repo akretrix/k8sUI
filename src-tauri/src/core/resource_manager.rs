@@ -1056,9 +1056,15 @@ impl GenericResourceManager {
 
                         let mut duration_str = "-".to_string();
                         if let Some(st) = s {
-                            if let Some(start_time_str) = st.get("startTime").and_then(|v| v.as_str()) {
-                                if let Ok(start_dt) = chrono::DateTime::parse_from_rfc3339(start_time_str) {
-                                    let end_dt = if let Some(comp_time_str) = st.get("completionTime").and_then(|v| v.as_str()) {
+                            if let Some(start_time_str) =
+                                st.get("startTime").and_then(|v| v.as_str())
+                            {
+                                if let Ok(start_dt) =
+                                    chrono::DateTime::parse_from_rfc3339(start_time_str)
+                                {
+                                    let end_dt = if let Some(comp_time_str) =
+                                        st.get("completionTime").and_then(|v| v.as_str())
+                                    {
                                         chrono::DateTime::parse_from_rfc3339(comp_time_str).ok()
                                     } else {
                                         Some(chrono::Utc::now().into())
@@ -1066,11 +1072,23 @@ impl GenericResourceManager {
                                     if let Some(end_dt) = end_dt {
                                         let dur = end_dt.signed_duration_since(start_dt);
                                         if dur.num_days() > 0 {
-                                            duration_str = format!("{}d {}h", dur.num_days(), dur.num_hours() % 24);
+                                            duration_str = format!(
+                                                "{}d {}h",
+                                                dur.num_days(),
+                                                dur.num_hours() % 24
+                                            );
                                         } else if dur.num_hours() > 0 {
-                                            duration_str = format!("{}h {}m", dur.num_hours(), dur.num_minutes() % 60);
+                                            duration_str = format!(
+                                                "{}h {}m",
+                                                dur.num_hours(),
+                                                dur.num_minutes() % 60
+                                            );
                                         } else if dur.num_minutes() > 0 {
-                                            duration_str = format!("{}m {}s", dur.num_minutes(), dur.num_seconds() % 60);
+                                            duration_str = format!(
+                                                "{}m {}s",
+                                                dur.num_minutes(),
+                                                dur.num_seconds() % 60
+                                            );
                                         } else {
                                             duration_str = format!("{}s", dur.num_seconds().max(0));
                                         }
@@ -1081,17 +1099,27 @@ impl GenericResourceManager {
                         obj["duration"] = json!(duration_str);
 
                         let mut job_status = "Active".to_string();
-                        if let Some(conds) = s.and_then(|st| st.get("conditions").and_then(|c| c.as_array())) {
-                            if conds.iter().any(|c| c.get("type").and_then(|v| v.as_str()) == Some("Complete") && c.get("status").and_then(|v| v.as_str()) == Some("True")) {
+                        if let Some(conds) =
+                            s.and_then(|st| st.get("conditions").and_then(|c| c.as_array()))
+                        {
+                            if conds.iter().any(|c| {
+                                c.get("type").and_then(|v| v.as_str()) == Some("Complete")
+                                    && c.get("status").and_then(|v| v.as_str()) == Some("True")
+                            }) {
                                 job_status = "Complete".to_string();
-                            } else if conds.iter().any(|c| c.get("type").and_then(|v| v.as_str()) == Some("Failed") && c.get("status").and_then(|v| v.as_str()) == Some("True")) {
+                            } else if conds.iter().any(|c| {
+                                c.get("type").and_then(|v| v.as_str()) == Some("Failed")
+                                    && c.get("status").and_then(|v| v.as_str()) == Some("True")
+                            }) {
                                 job_status = "Failed".to_string();
                             }
                         }
                         if job_status == "Active" {
                             if suspended {
                                 job_status = "Suspended".to_string();
-                            } else if let Some(active) = s.and_then(|st| st.get("active").and_then(|v| v.as_i64())) {
+                            } else if let Some(active) =
+                                s.and_then(|st| st.get("active").and_then(|v| v.as_i64()))
+                            {
                                 if active > 0 {
                                     job_status = "Running".to_string();
                                 }
@@ -2925,11 +2953,7 @@ impl GenericResourceManager {
         Ok(true)
     }
 
-    pub async fn rerun_job(
-        &self,
-        name: &str,
-        namespace: &str,
-    ) -> Result<String, ConnectorError> {
+    pub async fn rerun_job(&self, name: &str, namespace: &str) -> Result<String, ConnectorError> {
         let (job_res, job_caps) = self.resolve_api_resource("jobs")?;
         let job_api = self.get_api(&job_res, &job_caps, Some(namespace));
         let orig = job_api.get(name).await.map_err(ConnectorError::KubeError)?;
