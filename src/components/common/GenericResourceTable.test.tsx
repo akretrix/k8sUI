@@ -352,4 +352,61 @@ describe('GenericResourceTable Functional Tests', () => {
     );
   });
 
+  it('supports row multi-selection and fires batch restart and delete actions', async () => {
+    const onBatchDelete = vi.fn();
+    const onBatchRestart = vi.fn();
+
+    (api.listResources as any).mockResolvedValue([
+      { name: 'app-web', namespace: 'default', replicas: '3/3' },
+      { name: 'app-api', namespace: 'default', replicas: '2/2' },
+    ]);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GenericResourceTable
+          kind="deployments"
+          selectedNamespaces={[]}
+          namespaces={['default']}
+          onSelectNamespaces={vi.fn()}
+          onDescribe={vi.fn()}
+          onViewYaml={vi.fn()}
+          onDelete={vi.fn()}
+          onBatchDelete={onBatchDelete}
+          onBatchRestart={onBatchRestart}
+        />
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('app-web')).toBeInTheDocument();
+      expect(screen.getByText('app-api')).toBeInTheDocument();
+    });
+
+    // Toggle select all
+    const selectAllCheckbox = screen.getByLabelText('Select all rows');
+    fireEvent.click(selectAllCheckbox);
+
+    // Floating batch bar should appear
+    await waitFor(() => {
+      expect(screen.getByText(/deployments selected/i)).toBeInTheDocument();
+    });
+
+    const restartSelectedBtn = screen.getByRole('button', { name: /Restart Selected \(2\)/i });
+    fireEvent.click(restartSelectedBtn);
+    expect(onBatchRestart).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'app-web' }),
+        expect.objectContaining({ name: 'app-api' }),
+      ])
+    );
+
+    const deleteSelectedBtn = screen.getByRole('button', { name: /Delete Selected \(2\)/i });
+    fireEvent.click(deleteSelectedBtn);
+    expect(onBatchDelete).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'app-web' }),
+        expect.objectContaining({ name: 'app-api' }),
+      ])
+    );
+  });
 });

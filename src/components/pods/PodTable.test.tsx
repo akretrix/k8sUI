@@ -123,4 +123,41 @@ describe('PodTable Component (Functional Tests)', () => {
     expect(screen.getAllByTitle(/View Live Logs/i).length).toBeGreaterThan(0);
     expect(screen.getAllByTitle(/Describe Pod/i).length).toBeGreaterThan(0);
   });
+
+  it('supports pod multi-selection and triggers batch delete', () => {
+    const onBatchDeletePods = vi.fn();
+
+    render(
+      <PodTable
+        pods={mockPods}
+        selectedNamespaces={[]}
+        namespaces={['default', 'kube-system']}
+        isReadOnly={false}
+        isAdvancedMode={true}
+        onSelectNamespaces={vi.fn()}
+        onScalePod={vi.fn()}
+        onViewYaml={vi.fn()}
+        onExecPod={vi.fn()}
+        onPortForwardPod={vi.fn()}
+        onBatchDeletePods={onBatchDeletePods}
+        onRefresh={vi.fn()}
+      />
+    );
+
+    // Click select all pods
+    const selectAllCheckbox = screen.getByLabelText('Select all pods');
+    fireEvent.click(selectAllCheckbox);
+
+    // Floating batch bar should appear
+    expect(screen.getByText(/pods selected/i)).toBeInTheDocument();
+
+    const deleteBtn = screen.getByRole('button', { name: /Delete Selected \(2\)/i });
+    fireEvent.click(deleteBtn);
+    expect(onBatchDeletePods).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'auth-service-78dfb9f97-kx4w9' }),
+        expect.objectContaining({ name: 'metrics-exporter-5c8c5c7bb7-zz9pk' }),
+      ])
+    );
+  });
 });

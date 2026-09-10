@@ -155,4 +155,79 @@ describe('ConfirmationModal', () => {
     });
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
+
+  it('renders batch delete modal and requires typing "delete" to confirm', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        actionType="delete"
+        resourceKind="Secrets"
+        resourceName="3 Secrets"
+        batchItems={[
+          { name: 'secret-a', namespace: 'default' },
+          { name: 'secret-b', namespace: 'default' },
+          { name: 'secret-c', namespace: 'production' },
+        ]}
+        isReadOnly={false}
+      />
+    );
+
+    expect(screen.getByText('Delete 3 Secrets')).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to permanently delete/i)).toBeInTheDocument();
+    expect(screen.getByText('secret-a')).toBeInTheDocument();
+    expect(screen.getByText('secret-b')).toBeInTheDocument();
+    expect(screen.getByText('secret-c')).toBeInTheDocument();
+
+    const confirmBtn = screen.getByRole('button', { name: /Confirm Delete \(3\)/i });
+    expect(confirmBtn).toBeDisabled();
+
+    // Type delete
+    const input = screen.getByPlaceholderText('delete');
+    fireEvent.change(input, { target: { value: 'delete' } });
+    expect(confirmBtn).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders batch restart modal without requiring typing name', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmationModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        actionType="restart"
+        resourceKind="Deployments"
+        resourceName="2 Deployments"
+        batchItems={[
+          { name: 'dep-frontend', namespace: 'default' },
+          { name: 'dep-backend', namespace: 'default' },
+        ]}
+        isReadOnly={false}
+      />
+    );
+
+    expect(screen.getByText('Restart 2 Deployments')).toBeInTheDocument();
+    expect(screen.getByText(/rolling rollout restart on/i)).toBeInTheDocument();
+    expect(screen.getByText('dep-frontend')).toBeInTheDocument();
+    expect(screen.getByText('dep-backend')).toBeInTheDocument();
+
+    const confirmBtn = screen.getByRole('button', { name: /Confirm Restart \(2\)/i });
+    expect(confirmBtn).not.toBeDisabled();
+
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+  });
 });
