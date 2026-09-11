@@ -161,23 +161,38 @@ export const App: React.FC = () => {
   const [selectedResourceForDescribe, setSelectedResourceForDescribe] = useState<any | null>(null);
   const [selectedResourceForYaml, setSelectedResourceForYaml] = useState<EditableResourceRef | null>(null);
 
-  const handleOpenLogsTab = (res: { kind?: string; name: string; namespace?: string }) => {
+  const handleOpenLogsTab = (res: {
+    kind?: string;
+    name: string;
+    namespace?: string;
+    container?: string;
+    containers?: string[];
+    previous?: boolean;
+    tailLines?: number | null;
+  }) => {
     const namespace = res.namespace || 'default';
-    const tabId = `logs-${namespace}-${res.name}`;
+    const tabId = `logs-${namespace}-${res.name}${res.container ? `-${res.container}` : ''}${res.previous ? '-prev' : ''}`;
     const existingTab = panelTabs.find(t => t.id === tabId);
     if (!existingTab) {
-      setPanelTabs(prev => [...prev, {
-        id: tabId,
-        title: `Logs: ${res.name}`,
-        content: (
-          <LogsView
-            isActive={true}
-            onClose={() => handleClosePanelTab(tabId)}
-            resource={{ kind: res.kind || 'Pod', name: res.name, namespace }}
-          />
-        ),
-        onClose: () => handleClosePanelTab(tabId)
-      }]);
+      setPanelTabs(prev => [
+        ...prev,
+        {
+          id: tabId,
+          title: `Logs: ${res.name}${res.container ? ` (${res.container}${res.previous ? ':prev' : ''})` : res.previous ? ' (prev)' : ''}`,
+          content: (
+            <LogsView
+              isActive={true}
+              onClose={() => handleClosePanelTab(tabId)}
+              resource={{ kind: res.kind || 'Pod', name: res.name, namespace, containers: res.containers }}
+              initialContainer={res.container}
+              initialContainers={res.containers}
+              initialPrevious={res.previous}
+              initialTailLines={res.tailLines}
+            />
+          ),
+          onClose: () => handleClosePanelTab(tabId),
+        },
+      ]);
     }
     setActivePanelTabId(tabId);
     setIsPanelOpen(true);
@@ -1049,7 +1064,14 @@ export const App: React.FC = () => {
                 onScalePod={handleScalePod}
                 onViewYaml={(pod) => setSelectedResourceForYaml({ kind: 'Pod', name: pod.name, namespace: pod.namespace })}
                 onDescribePod={(pod) => setSelectedResourceForDescribe({ kind: 'Pod', name: pod.name, namespace: pod.namespace })}
-                onLogsPod={handleOpenLogsTab}
+                onLogsPod={(pod) =>
+                  handleOpenLogsTab({
+                    kind: 'Pod',
+                    name: pod.name,
+                    namespace: pod.namespace,
+                    containers: pod.containers?.map((c) => c.name),
+                  })
+                }
                 onExecPod={handleOpenExecTab}
                 onPortForwardPod={setSelectedPodForPortForward}
                 onDeletePod={(pod) =>
@@ -1195,7 +1217,12 @@ export const App: React.FC = () => {
         onSelectPod={(pod) => {
           handleSelectResource('pods');
           handleSetFilterQuery(pod.name);
-          handleOpenLogsTab({ kind: 'Pod', name: pod.name, namespace: pod.namespace });
+          handleOpenLogsTab({
+            kind: 'Pod',
+            name: pod.name,
+            namespace: pod.namespace,
+            containers: pod.containers?.map((c) => c.name),
+          });
         }}
         onOpenAi={() => setIsAiDrawerOpen(true)}
         onOpenAudit={() => setIsAuditModalOpen(true)}

@@ -30,7 +30,6 @@ export const MetadataLabelsAnnotations: React.FC<MetadataLabelsAnnotationsProps>
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copiedAll, setCopiedAll] = useState<'labels' | 'annotations' | null>(null);
   const [expandedAnnotations, setExpandedAnnotations] = useState<Record<string, boolean>>({});
-  const [showAllLabels, setShowAllLabels] = useState(false);
   const [activeSubTab, setActiveSubTab] = useState<'resource' | 'template'>('resource');
 
   const activeLabels = activeSubTab === 'template' && podTemplateLabels ? podTemplateLabels : labels;
@@ -90,7 +89,6 @@ export const MetadataLabelsAnnotations: React.FC<MetadataLabelsAnnotationsProps>
     return { isJson: false, isMultiline, formatted: val };
   };
 
-  const visibleLabels = showAllLabels ? filteredLabels : filteredLabels.slice(0, 16);
   const hasTemplateMetadata = Boolean(podTemplateLabels || podTemplateAnnotations);
 
   return (
@@ -173,63 +171,98 @@ export const MetadataLabelsAnnotations: React.FC<MetadataLabelsAnnotationsProps>
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-0">
           {labelEntries.length === 0 ? (
-            <div className="text-xs font-mono text-gray-500 py-2 italic text-center">
+            <div className="text-xs font-mono text-gray-500 p-6 italic text-center">
               No labels defined on this resource.
             </div>
           ) : filteredLabels.length === 0 ? (
-            <div className="text-xs font-mono text-gray-400 py-2 text-center">
+            <div className="text-xs font-mono text-gray-400 p-6 text-center">
               No labels matching "{labelFilter}".
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {visibleLabels.map(([key, val]) => {
-                  const isSystem = key.startsWith('app.kubernetes.io/') || key.startsWith('k8s-app') || key.startsWith('helm.sh/');
-                  const isCopied = copiedKey === `label-${key}`;
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border/80 bg-[#070A0F] text-[11px] text-gray-400 font-semibold uppercase tracking-wider select-none">
+                    <th className="py-2.5 px-4 w-2/5 sm:w-1/3">Key</th>
+                    <th className="py-2.5 px-4">Value</th>
+                    <th className="py-2.5 px-4 w-24 text-right">Length</th>
+                    <th className="py-2.5 px-3 w-14 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {filteredLabels.map(([key, val]) => {
+                    const isSystem =
+                      key.startsWith('app.kubernetes.io/') ||
+                      key.startsWith('k8s-app') ||
+                      key.startsWith('helm.sh/') ||
+                      key.startsWith('security.istio.io/') ||
+                      key.startsWith('service.istio.io/') ||
+                      key.startsWith('pod-template-hash');
+                    const isCopied = copiedKey === `label-${key}`;
+                    const strVal = String(val);
 
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => handleCopy(`${key}: ${val}`, `label-${key}`)}
-                      className={`group cursor-pointer flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition-all hover:scale-[1.02] select-text ${
-                        isSystem
-                          ? 'bg-indigo-950/30 border-indigo-700/50 hover:border-indigo-500 text-indigo-200'
-                          : 'bg-[#10141D] border-border/80 hover:border-cyan-500/60 text-gray-300'
-                      }`}
-                      title="Click to copy label"
-                    >
-                      <span className="text-gray-400 font-medium">{key}</span>
-                      <span className="text-gray-600">=</span>
-                      <span className="text-cyan-300 font-bold">{String(val)}</span>
-                      <button
-                        type="button"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-gray-400 hover:text-white"
+                    return (
+                      <tr
+                        key={key}
+                        className="hover:bg-surface-elevated/40 transition-colors align-middle group"
                       >
-                        {isCopied ? (
-                          <Check className="w-3 h-3 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                        {/* Key Column */}
+                        <td className="py-2.5 px-4 align-middle">
+                          <div className="flex items-center space-x-2 min-w-0">
+                            {isSystem && (
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-800/80 font-bold uppercase tracking-wider shrink-0 font-mono">
+                                SYS
+                              </span>
+                            )}
+                            <span
+                              className="text-gray-300 font-medium break-all select-text"
+                              title={key}
+                            >
+                              {key}
+                            </span>
+                          </div>
+                        </td>
 
-              {filteredLabels.length > 16 && (
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAllLabels(!showAllLabels)}
-                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 hover:underline flex items-center space-x-1"
-                  >
-                    <span>{showAllLabels ? 'Show fewer labels' : `Show all ${filteredLabels.length} labels…`}</span>
-                    {showAllLabels ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                  </button>
-                </div>
-              )}
+                        {/* Value Column */}
+                        <td className="py-2.5 px-4 align-middle">
+                          <div className="flex items-center min-w-0">
+                            <span
+                              className="text-cyan-300 font-semibold break-all select-text bg-[#0B0F17]/60 px-2 py-0.5 rounded border border-cyan-950/60"
+                              title={strVal}
+                            >
+                              {strVal}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Length Column */}
+                        <td className="py-2.5 px-4 text-right align-middle text-gray-500 text-[11px] whitespace-nowrap">
+                          {strVal.length} chars
+                        </td>
+
+                        {/* Copy Action Column */}
+                        <td className="py-2.5 px-3 text-center align-middle">
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(`${key}: ${strVal}`, `label-${key}`)}
+                            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                            title="Copy label (Key: Value)"
+                            aria-label={`Copy label ${key}`}
+                          >
+                            {isCopied ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -285,89 +318,124 @@ export const MetadataLabelsAnnotations: React.FC<MetadataLabelsAnnotationsProps>
           </div>
         </div>
 
-        <div className="p-4">
+        <div className="p-0">
           {annotationEntries.length === 0 ? (
-            <div className="text-xs font-mono text-gray-500 py-2 italic text-center">
+            <div className="text-xs font-mono text-gray-500 p-6 italic text-center">
               No annotations defined on this resource.
             </div>
           ) : filteredAnnotations.length === 0 ? (
-            <div className="text-xs font-mono text-gray-400 py-2 text-center">
+            <div className="text-xs font-mono text-gray-400 p-6 text-center">
               No annotations matching "{annotationFilter}".
             </div>
           ) : (
-            <div className="space-y-3">
-              {filteredAnnotations.map(([key, rawVal]) => {
-                const isExpanded = Boolean(expandedAnnotations[key]);
-                const isCopied = copiedKey === `annotation-${key}`;
-                const { isJson, isMultiline, formatted } = formatAnnotationValue(String(rawVal));
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-border/80 bg-[#070A0F] text-[11px] text-gray-400 font-semibold uppercase tracking-wider select-none">
+                    <th className="py-2.5 px-4 w-2/5 sm:w-1/3">Key</th>
+                    <th className="py-2.5 px-4">Value</th>
+                    <th className="py-2.5 px-4 w-24 text-right">Length</th>
+                    <th className="py-2.5 px-3 w-14 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {filteredAnnotations.map(([key, rawVal]) => {
+                    const isExpanded = Boolean(expandedAnnotations[key]);
+                    const isCopied = copiedKey === `annotation-${key}`;
+                    const { isJson, isMultiline, formatted } = formatAnnotationValue(String(rawVal));
 
-                return (
-                  <div
-                    key={key}
-                    className="p-3.5 rounded-xl bg-[#10141D] border border-border/80 space-y-2 font-mono text-xs hover:border-border transition-colors"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center space-x-2 min-w-0">
-                        {isMultiline && (
+                    return (
+                      <tr
+                        key={key}
+                        className="hover:bg-surface-elevated/40 transition-colors align-top group"
+                      >
+                        {/* Key Column */}
+                        <td className="py-2.5 px-4 align-top">
+                          <div className="flex items-start space-x-1.5 min-w-0">
+                            {isMultiline && (
+                              <button
+                                type="button"
+                                onClick={() => toggleAnnotation(key)}
+                                className="p-0.5 mt-0.5 rounded text-gray-400 hover:text-white transition-colors shrink-0"
+                                title={isExpanded ? 'Collapse' : 'Expand'}
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-3.5 h-3.5 text-brand-400" />
+                                ) : (
+                                  <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />
+                                )}
+                              </button>
+                            )}
+                            <div className="min-w-0">
+                              <span
+                                className="font-bold text-indigo-300 break-all select-text inline-block"
+                                title={key}
+                              >
+                                {key}
+                              </span>
+                              {isJson && (
+                                <span className="ml-1.5 inline-flex items-center space-x-1 text-[10px] px-1.5 py-0.2 bg-purple-950/60 text-purple-300 border border-purple-800 rounded font-semibold align-middle">
+                                  <Code className="w-2.5 h-2.5" />
+                                  <span>JSON</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Value Column */}
+                        <td className="py-2.5 px-4 align-top">
+                          {isMultiline ? (
+                            <div>
+                              {isExpanded ? (
+                                <pre className="p-2.5 rounded-lg bg-[#0B0F17] border border-border/60 text-[11px] text-amber-200/90 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-72 select-text">
+                                  {formatted}
+                                </pre>
+                              ) : (
+                                <div
+                                  onClick={() => toggleAnnotation(key)}
+                                  className="text-[11px] text-gray-300 truncate cursor-pointer hover:text-amber-200 flex items-center space-x-1.5 select-text"
+                                  title="Click to expand multiline value"
+                                >
+                                  <span className="truncate max-w-lg">{formatted.slice(0, 100)}</span>
+                                  <span className="text-indigo-400 text-[10px] font-semibold shrink-0">
+                                    [+ expand]
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-amber-200/90 break-all select-text font-mono">
+                              {formatted || '""'}
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Length Column */}
+                        <td className="py-2.5 px-4 align-top text-right text-[10px] text-gray-500 whitespace-nowrap pt-3">
+                          {String(rawVal).length} chars
+                        </td>
+
+                        {/* Action Column */}
+                        <td className="py-2.5 px-3 align-top text-center pt-2.5">
                           <button
                             type="button"
-                            onClick={() => toggleAnnotation(key)}
-                            className="p-0.5 rounded text-gray-400 hover:text-gray-200"
+                            onClick={() => handleCopy(formatted, `annotation-${key}`)}
+                            className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-white transition-colors"
+                            title="Copy annotation value"
                           >
-                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5 text-indigo-400" />}
+                            {isCopied ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
                           </button>
-                        )}
-                        <span className="font-bold text-indigo-300 truncate" title={key}>
-                          {key}
-                        </span>
-                        {isJson && (
-                          <span className="text-[10px] px-1.5 py-0.2 bg-purple-950/60 text-purple-300 border border-purple-800 rounded font-semibold flex items-center space-x-1">
-                            <Code className="w-2.5 h-2.5" />
-                            <span>JSON</span>
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center space-x-2 shrink-0">
-                        <span className="text-[10px] text-gray-500">
-                          {String(rawVal).length} chars
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(formatted, `annotation-${key}`)}
-                          className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-white transition-colors"
-                          title="Copy annotation value"
-                        >
-                          {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Value Container */}
-                    {isMultiline ? (
-                      <div>
-                        {isExpanded ? (
-                          <pre className="p-3 rounded-lg bg-[#0B0F17] border border-border/60 text-[11px] text-amber-200/90 overflow-x-auto whitespace-pre-wrap leading-relaxed max-h-72">
-                            {formatted}
-                          </pre>
-                        ) : (
-                          <div
-                            onClick={() => toggleAnnotation(key)}
-                            className="p-2 rounded-lg bg-[#0B0F17]/60 border border-border/40 text-[11px] text-gray-400 truncate cursor-pointer hover:text-gray-300"
-                            title="Click to expand"
-                          >
-                            {formatted.slice(0, 120)}… <span className="text-indigo-400 font-semibold text-[10px]">(Click to expand)</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="p-2 rounded-lg bg-[#0B0F17] border border-border/40 text-[11px] text-amber-200/90 break-all select-text">
-                        {formatted || '""'}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
