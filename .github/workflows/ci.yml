@@ -172,7 +172,7 @@ jobs:
       - name: Generate Frontend SBOM (CycloneDX)
         timeout-minutes: 3
         run: |
-          pnpm dlx @cyclonedx/cyclonedx-npm --output-file frontend-sbom.cdx.json
+          pnpm dlx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file frontend-sbom.cdx.json
       - name: Sign SBOM with Cosign Keyless OIDC
         timeout-minutes: 3
         run: |

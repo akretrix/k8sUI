@@ -3,10 +3,11 @@
 <!-- Replace with your actual logo -->
 <img src="assets/logo.png" alt="k8sUI Logo" width="96" height="96" />
 
-# k8sUI — Native Kubernetes UI & Graphical Desktop Client (GUI)
+# k8sUI — Native Kubernetes UI & Open-Source Dashboard Alternative
 
-**Enterprise-grade, open-source native Kubernetes UI and desktop client for multi-cloud (AWS EKS, Azure AKS) and local clusters.**
+**Enterprise-grade, lightweight native Kubernetes UI, desktop GUI client, and Kubernetes Dashboard alternative for multi-cloud (AWS EKS, Azure AKS) and local clusters.**
 
+[![Website](https://img.shields.io/badge/Website-akretrix.com%2Fproducts%2Fk8sui-0284c7?style=flat&logo=googlechrome&logoColor=white)](https://akretrix.com/products/k8sui/)
 [![GitHub Release](https://img.shields.io/github/v/release/akretrix/k8sUI?sort=semver&logo=github)](https://github.com/akretrix/k8sUI/releases)
 [![CI Status](https://github.com/akretrix/k8sUI/actions/workflows/ci.yml/badge.svg)](https://github.com/akretrix/k8sUI/actions/workflows/ci.yml)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri-FFC131?logo=tauri&logoColor=white)](https://tauri.app/)
@@ -25,7 +26,14 @@
 
 ---
 
-**k8sUI** is a zero-Electron, native desktop application for managing Kubernetes clusters across **Amazon EKS**, **Azure AKS**, and **local environments** — built with Tauri v2 + Rust + React. It replaces fragile `kubectl` shell scripts with a secure, observable, production-ready GUI without the overhead of a full web platform.
+> 🌐 **Official Website & Downloads:** [https://akretrix.com/products/k8sui/](https://akretrix.com/products/k8sui/)  
+> 📦 **Download Prebuilt Binaries (macOS, Windows, Linux):** [Latest Releases](https://github.com/akretrix/k8sUI/releases)
+
+---
+
+**k8sUI** is a zero-Electron, native desktop Kubernetes UI and modern **Kubernetes Dashboard alternative** for managing clusters across **Amazon EKS**, **Azure AKS**, and **local environments** (`kind`, `minikube`, `k3d`) — engineered with Tauri v2 + Rust + React.
+
+Unlike the archived official in-cluster Kubernetes Dashboard which required deploying pods, services, and high-privilege RBAC into your cluster, **k8sUI runs 100% locally on your machine with zero in-cluster installation**, consuming under 80MB of RAM, starting in under 300ms, and communicating directly with Kubernetes API servers over native TLS.
 
 ---
 

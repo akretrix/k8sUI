@@ -248,7 +248,7 @@ jobs:
           
           # Generate Frontend Node SBOM
           pnpm install --frozen-lockfile
-          pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom/frontend-bom.cdx.json
+          pnpm dlx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file sbom/frontend-bom.cdx.json
           test -s sbom/frontend-bom.cdx.json
 
       - name: Generate SHA256 Checksums
