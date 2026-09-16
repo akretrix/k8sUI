@@ -10,7 +10,7 @@ import {
   RowSelectionState,
 } from '@tanstack/react-table';
 import { api } from '../../api/tauriClient';
-import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw } from 'lucide-react';
+import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { NamespaceMultiSelect } from './NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { HelmInstallModal } from '../helm/HelmInstallModal';
@@ -981,7 +981,18 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
                       }`}
                       onClick={isSelectCol ? undefined : header.column.getToggleSortingHandler()}
                     >
-                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      <div className="flex items-center space-x-1">
+                        <span>{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                        {!isSelectCol && header.column.getCanSort() && (
+                          header.column.getIsSorted() === 'asc' ? (
+                            <ArrowUp className="w-3 h-3 text-brand-400 shrink-0" />
+                          ) : header.column.getIsSorted() === 'desc' ? (
+                            <ArrowDown className="w-3 h-3 text-brand-400 shrink-0" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 text-gray-500 opacity-50 hover:opacity-100 shrink-0 transition-opacity" />
+                          )
+                        )}
+                      </div>
                     </th>
                   );
                 })}

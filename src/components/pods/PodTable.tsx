@@ -6,6 +6,8 @@ import {
   Layers,
   Terminal,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Filter,
   FileCode,
   Scale,
@@ -44,6 +46,41 @@ interface PodTableProps {
   onRefresh: () => void;
   onReconnect?: () => void;
   onSsoLogin?: () => void;
+}
+
+function parseAgeToSeconds(age?: string): number {
+  if (!age) return 0;
+  const match = age.match(/^(\d+)([smhdwy])$/i);
+  if (!match) return 0;
+  const val = parseInt(match[1], 10);
+  const unit = match[2].toLowerCase();
+  switch (unit) {
+    case 's': return val;
+    case 'm': return val * 60;
+    case 'h': return val * 3600;
+    case 'd': return val * 86400;
+    case 'w': return val * 604800;
+    case 'y': return val * 31536000;
+    default: return val;
+  }
+}
+
+function parseCpu(cpu?: string): number {
+  if (!cpu || cpu === '-') return -1;
+  if (cpu.endsWith('m')) {
+    return parseFloat(cpu.slice(0, -1)) || 0;
+  }
+  return (parseFloat(cpu) || 0) * 1000;
+}
+
+function parseMemory(mem?: string): number {
+  if (!mem || mem === '-') return -1;
+  const lower = mem.toLowerCase();
+  if (lower.endsWith('ki')) return (parseFloat(mem) || 0) * 1024;
+  if (lower.endsWith('mi')) return (parseFloat(mem) || 0) * 1024 * 1024;
+  if (lower.endsWith('gi')) return (parseFloat(mem) || 0) * 1024 * 1024 * 1024;
+  if (lower.endsWith('ti')) return (parseFloat(mem) || 0) * 1024 * 1024 * 1024 * 1024;
+  return parseFloat(mem) || 0;
 }
 
 const DEFAULT_POD_COLUMNS: ColumnDefinition[] = [
@@ -232,11 +269,51 @@ export const PodTable: React.FC<PodTableProps> = ({
       return matchNs && matchSearch;
     })
     .sort((a, b) => {
-      const valA = (a && a[sortField]) || '';
-      const valB = (b && b[sortField]) || '';
-      if (valA < valB) return sortAsc ? -1 : 1;
-      if (valA > valB) return sortAsc ? 1 : -1;
-      return 0;
+      let cmp = 0;
+      switch (sortField) {
+        case 'name':
+          cmp = (a.name || '').localeCompare(b.name || '');
+          break;
+        case 'namespace':
+          cmp = (a.namespace || '').localeCompare(b.namespace || '');
+          break;
+        case 'ready_containers': {
+          const [rA = 0, tA = 1] = (a.ready_containers || '0/1').split('/').map(Number);
+          const [rB = 0, tB = 1] = (b.ready_containers || '0/1').split('/').map(Number);
+          const ratioA = rA / (tA || 1);
+          const ratioB = rB / (tB || 1);
+          cmp = ratioA !== ratioB ? ratioA - ratioB : rA - rB;
+          break;
+        }
+        case 'status':
+          cmp = (a.status || '').localeCompare(b.status || '');
+          break;
+        case 'restarts':
+          cmp = (a.restarts ?? 0) - (b.restarts ?? 0);
+          break;
+        case 'age': {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : -parseAgeToSeconds(a.age);
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : -parseAgeToSeconds(b.age);
+          cmp = timeA - timeB;
+          break;
+        }
+        case 'cpu':
+          cmp = parseCpu(a.cpu) - parseCpu(b.cpu);
+          break;
+        case 'memory':
+          cmp = parseMemory(a.memory) - parseMemory(b.memory);
+          break;
+        case 'node':
+          cmp = (a.node || '').localeCompare(b.node || '');
+          break;
+        default:
+          cmp = String((a && (a as any)[sortField]) || '').localeCompare(String((b && (b as any)[sortField]) || ''));
+          break;
+      }
+      if (cmp !== 0) {
+        return sortAsc ? cmp : -cmp;
+      }
+      return (a.name || '').localeCompare(b.name || '');
     });
 
   useEffect(() => {
@@ -279,6 +356,32 @@ export const PodTable: React.FC<PodTableProps> = ({
       setSortField(field);
       setSortAsc(true);
     }
+  };
+
+  const renderSortHeader = (field: keyof PodSummary, label: string, extraClasses = '') => {
+    const isSorted = sortField === field;
+    return (
+      <th
+        onClick={() => toggleSort(field)}
+        className={`py-2.5 px-3 font-medium cursor-pointer hover:text-white transition-colors select-none ${extraClasses} ${
+          isSorted ? 'text-brand-400' : ''
+        }`}
+        title={`Sort by ${label} (${isSorted ? (sortAsc ? 'ascending' : 'descending') : 'click to sort'})`}
+      >
+        <div className="flex items-center space-x-1">
+          <span>{label}</span>
+          {isSorted ? (
+            sortAsc ? (
+              <ArrowUp className="w-3 h-3 text-brand-400 shrink-0" />
+            ) : (
+              <ArrowDown className="w-3 h-3 text-brand-400 shrink-0" />
+            )
+          ) : (
+            <ArrowUpDown className="w-3 h-3 text-gray-500 opacity-60 hover:opacity-100 shrink-0 transition-opacity" />
+          )}
+        </div>
+      </th>
+    );
   };
 
   return (
@@ -342,51 +445,15 @@ export const PodTable: React.FC<PodTableProps> = ({
                   aria-label="Select all pods"
                 />
               </th>
-              {isColVisible.name && (
-                <th
-                  onClick={() => toggleSort('name')}
-                  className="py-2.5 px-4 font-medium cursor-pointer hover:text-white transition-colors"
-                >
-                  <div className="flex items-center space-x-1">
-                    <span>Name</span>
-                    <ArrowUpDown className="w-3 h-3" />
-                  </div>
-                </th>
-              )}
-              {isColVisible.namespace && (
-                <th
-                  onClick={() => toggleSort('namespace')}
-                  className="py-2.5 px-3 font-medium cursor-pointer hover:text-white"
-                >
-                  Namespace
-                </th>
-              )}
-              {isColVisible.ready && (
-                <th className="py-2.5 px-3 font-medium">Ready</th>
-              )}
-              {isColVisible.status && (
-                <th
-                  onClick={() => toggleSort('status')}
-                  className="py-2.5 px-3 font-medium cursor-pointer hover:text-white"
-                >
-                  Status
-                </th>
-              )}
-              {isColVisible.restarts && (
-                <th className="py-2.5 px-3 font-medium">Restarts</th>
-              )}
-              {isColVisible.age && (
-                <th className="py-2.5 px-3 font-medium">Age</th>
-              )}
-              {isColVisible.cpu && (
-                <th className="py-2.5 px-3 font-medium hidden md:table-cell">CPU</th>
-              )}
-              {isColVisible.memory && (
-                <th className="py-2.5 px-3 font-medium hidden md:table-cell">Memory</th>
-              )}
-              {isColVisible.node && (
-                <th className="py-2.5 px-3 font-medium hidden lg:table-cell">Node</th>
-              )}
+              {isColVisible.name && renderSortHeader('name', 'Name', 'px-4')}
+              {isColVisible.namespace && renderSortHeader('namespace', 'Namespace')}
+              {isColVisible.ready && renderSortHeader('ready_containers', 'Ready')}
+              {isColVisible.status && renderSortHeader('status', 'Status')}
+              {isColVisible.restarts && renderSortHeader('restarts', 'Restarts')}
+              {isColVisible.age && renderSortHeader('age', 'Age')}
+              {isColVisible.cpu && renderSortHeader('cpu', 'CPU', 'hidden md:table-cell')}
+              {isColVisible.memory && renderSortHeader('memory', 'Memory', 'hidden md:table-cell')}
+              {isColVisible.node && renderSortHeader('node', 'Node', 'hidden lg:table-cell')}
               {isColVisible.actions && (
                 <th className="py-2.5 px-4 font-medium text-right">Actions</th>
               )}

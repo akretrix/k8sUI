@@ -2552,8 +2552,12 @@ impl GenericResourceManager {
             Api::all(self.client.clone())
         };
 
-        let lp_pods = ListParams::default();
-        let lp_metrics = ListParams::default();
+        // Cap at 500 pods per fetch. Without a limit the API server returns the
+        // full etcd snapshot which can be megabytes of JSON on large clusters.
+        // The UI only shows what fits on-screen anyway; the filter / search is
+        // client-side, so a hard cap keeps response sizes sane.
+        let lp_pods = ListParams::default().limit(500);
+        let lp_metrics = ListParams::default().limit(500);
         let (pods_res, metrics_res) = tokio::join!(
             tokio::time::timeout(std::time::Duration::from_secs(20), api.list(&lp_pods),),
             async {

@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import {
   ActivePortForward,
   ApplyResult,
@@ -63,7 +64,6 @@ async function invokeTauri<T>(cmd: string, args: Record<string, any> = {}): Prom
   try {
     let result: T;
     if (isTauri) {
-      const { invoke } = await import('@tauri-apps/api/core');
       const res = await invoke<{ success: boolean; data?: T; error?: string }>(cmd, args);
       if (!res.success) {
         throw new Error(res.error || `Command ${cmd} failed`);
@@ -1461,4 +1461,13 @@ export const api = {
       recentBackendLogs: backendLogs,
     };
   },
+
+  // ── Watch stream lifecycle ───────────────────────────────────────────────
+  /** Start (or restart) the cluster-wide pod watch stream on the Rust side. */
+  startPodWatch: (): Promise<boolean> =>
+    invokeTauri<boolean>('start_pod_watch'),
+
+  /** Stop the cluster-wide pod watch stream. */
+  stopPodWatch: (): Promise<boolean> =>
+    invokeTauri<boolean>('stop_pod_watch'),
 };

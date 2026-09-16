@@ -27,6 +27,7 @@ import { AwsSsoModal } from './components/cluster/AwsSsoModal';
 import { BottomPanel, PanelTab } from './components/layout/BottomPanel';
 import { ZoomHud } from './components/common/ZoomHud';
 import { useZoom } from './hooks/useZoom';
+import { usePodWatch } from './hooks/usePodWatch';
 import { checkForAppUpdates, UpdateInfo } from './utils/updateChecker';
 import { UpdateModal } from './components/common/UpdateModal';
 import { DiagnosticsModal } from './components/common/DiagnosticsModal';
@@ -541,23 +542,24 @@ export const App: React.FC = () => {
 
   const autoConnectedClusterRef = useRef<string | null>(null);
 
+  // ── Pods — Watch-stream powered (replaces polling) ──────────────────────
+  //
+  // usePodWatch hydrates from list_pods on mount/cluster-change (so CPU+Memory
+  // are available immediately), then switches to push-based updates via the
+  // Rust WatchManager. A slow 60 s timer refreshes metrics in the background.
+  // In browser mode it falls back to 15 s polling transparently.
   const {
-    data: pods = [],
+    pods,
     isLoading: isPodsLoading,
     isError: isPodsError,
-    error: podsError,
+    error: podsErrorObj,
     refetch: refetchPods,
-  } = useQuery({
-    queryKey: ['pods', activeCluster?.id, selectedNamespaces],
-    // A single selected namespace is scoped server-side (cheaper); zero or
-    // several are fetched cluster-wide and filtered client-side in PodTable —
-    // Kubernetes' list API has no "these N namespaces" query of its own.
-    queryFn: () => api.listPods(selectedNamespaces.length === 1 ? selectedNamespaces[0] : undefined),
-    enabled: !!activeCluster && activeResource === 'pods',
-    placeholderData: (previousData) => previousData,
-    staleTime: 15_000,
-    refetchInterval: activeResource === 'pods' ? 8000 : false,
-  });
+  } = usePodWatch(
+    activeCluster?.id,
+    selectedNamespaces,
+    !!activeCluster && activeResource === 'pods',
+  );
+  const podsError = podsErrorObj ? new Error(podsErrorObj) : null;
 
   const { data: auditLogs = [], refetch: refetchAuditLogs } = useQuery({
     queryKey: ['auditLogs'],
@@ -588,7 +590,13 @@ export const App: React.FC = () => {
   const { data: activePortForwards = [], refetch: refetchPortForwards } = useQuery({
     queryKey: ['port-forwards'],
     queryFn: api.listPortForwards,
-    refetchInterval: 3000,
+    // Back off to 30 s when there are no active forwards — saves ~10 IPC
+    // calls per minute at idle. When forwards are live, keep the 3 s
+    // cadence so status changes (broken tunnel, etc.) are surfaced fast.
+    refetchInterval: (query) => {
+      const forwards = query.state.data as ActivePortForward[] | undefined;
+      return forwards && forwards.length > 0 ? 3_000 : 30_000;
+    },
   });
 
   const handleStopPortForward = async (sessionId: string) => {
@@ -883,7 +891,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-background text-gray-100 font-sans overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-background text-gray-100 font-sans overflow-hidden">
       {/* Read-Only Banner in Browser Mode */}
       {!isTauri && (
         <div className="shrink-0 bg-amber-500/10 border-b border-amber-500/20 px-4 py-1.5 flex items-center justify-between text-xs text-amber-200">

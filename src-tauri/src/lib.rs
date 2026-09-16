@@ -256,6 +256,8 @@ pub fn run() {
             commands::open_logs_dir,
             commands::get_backend_logs,
             commands::toggle_devtools,
+            commands::start_pod_watch,
+            commands::stop_pod_watch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

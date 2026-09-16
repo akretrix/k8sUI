@@ -6,7 +6,7 @@ use crate::core::audit::AuditEntry;
 use crate::core::AppState;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Serialize, Deserialize)]
 pub struct ApiResponse<T> {
@@ -159,6 +159,7 @@ pub async fn check_cluster_health(
 #[tauri::command]
 pub async fn reconnect_cluster(
     cluster_id: Option<String>,
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ApiResponse<ClusterHealthInfo>, String> {
     let target_id = if let Some(id) = cluster_id {
@@ -174,8 +175,11 @@ pub async fn reconnect_cluster(
     // Invalidate cached resource manager
     state.session.invalidate_resource_manager().await;
 
+    // Stop any running watches — they will be restarted after reconnect
+    state.watch_manager.stop_all().await;
+
     // Connect cluster
-    match connect_cluster(target_id, state.clone()).await {
+    match connect_cluster(target_id, app_handle, state.clone()).await {
         Ok(res) => {
             if !res.success {
                 return Ok(ApiResponse::ok(ClusterHealthInfo {
@@ -188,7 +192,8 @@ pub async fn reconnect_cluster(
                     last_checked: chrono::Utc::now().to_rfc3339(),
                 }));
             }
-            // Check health on the newly connected cluster
+            // Check health on the newly connected cluster (watches were started
+            // inside connect_cluster on the success path)
             check_cluster_health(state).await
         }
         Err(e) => Ok(ApiResponse::ok(ClusterHealthInfo {
@@ -291,6 +296,7 @@ pub async fn get_available_clusters(
 #[tauri::command]
 pub async fn connect_cluster(
     cluster_id: String,
+    app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ApiResponse<ClusterContextSummary>, String> {
     let clusters = state.session.get_available_clusters().await;
@@ -408,6 +414,18 @@ pub async fn connect_cluster(
                 "connected_read_only",
             )
             .await;
+
+        // Start Watch streams — stop any stale watches from a previous cluster
+        // first, then spin up the new ones against the freshly connected client.
+        state.watch_manager.stop_all().await;
+        if let Ok(connector) = state.session.get_active_connector().await {
+            if let Ok(client) = connector.get_client().await {
+                state
+                    .watch_manager
+                    .start_pod_watch(app_handle, client)
+                    .await;
+            }
+        }
 
         Ok(ApiResponse::ok(cluster))
     } else {
@@ -1998,4 +2016,36 @@ pub async fn toggle_devtools(app: tauri::AppHandle) -> Result<ApiResponse<bool>,
     } else {
         Ok(ApiResponse::err("Main window not found".to_string()))
     }
+}
+
+/// Start (or restart) the cluster-wide pod watch stream.
+///
+/// This is called automatically by `connect_cluster` / `reconnect_cluster`.
+/// The frontend can also call it explicitly after SSO login or any flow that
+/// refreshes the kube client without going through a full reconnect cycle.
+#[tauri::command]
+pub async fn start_pod_watch(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<bool>, String> {
+    let connector = match state.session.get_active_connector().await {
+        Ok(c) => c,
+        Err(e) => return Ok(ApiResponse::err(format!("No active cluster: {e}"))),
+    };
+    let client = match connector.get_client().await {
+        Ok(c) => c,
+        Err(e) => return Ok(ApiResponse::err(format!("Failed to get kube client: {e}"))),
+    };
+    state
+        .watch_manager
+        .start_pod_watch(app_handle, client)
+        .await;
+    Ok(ApiResponse::ok(true))
+}
+
+/// Stop the cluster-wide pod watch stream (if running).
+#[tauri::command]
+pub async fn stop_pod_watch(state: State<'_, AppState>) -> Result<ApiResponse<bool>, String> {
+    state.watch_manager.stop_pod_watch().await;
+    Ok(ApiResponse::ok(true))
 }

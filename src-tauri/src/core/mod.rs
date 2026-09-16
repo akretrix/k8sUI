@@ -3,6 +3,7 @@ pub mod credentials;
 pub mod redact;
 pub mod resource_manager;
 pub mod session;
+pub mod watch_manager;
 
 use crate::connector::aws_sso::AwsSsoManager;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub terminal: Arc<crate::terminal::TerminalManager>,
     pub port_forward: Arc<crate::portforward::PortForwardManager>,
     pub ai: Arc<crate::ai::AiCopilotService>,
+    pub watch_manager: Arc<watch_manager::WatchManager>,
 }
 
 impl Default for AppState {
@@ -33,6 +35,7 @@ impl AppState {
             terminal: Arc::new(crate::terminal::TerminalManager::new()),
             port_forward: Arc::new(crate::portforward::PortForwardManager::new()),
             ai: Arc::new(crate::ai::AiCopilotService::new()),
+            watch_manager: Arc::new(watch_manager::WatchManager::new()),
         }
     }
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { isTauri } from '../api/tauriClient';
 
 export const MIN_ZOOM = 0.7;
 export const MAX_ZOOM = 1.8;
@@ -25,6 +26,8 @@ export function useZoom() {
 
   const [showIndicator, setShowIndicator] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingZoomRef = useRef<number | null>(null);
+  const isApplyingZoomRef = useRef<boolean>(false);
 
   const displayIndicator = useCallback(() => {
     setShowIndicator(true);
@@ -53,20 +56,59 @@ export function useZoom() {
     displayIndicator();
   }, [displayIndicator]);
 
-  // Apply zoom factor to root elements and persist in localStorage
+  // Apply zoom factor:
+  // - Purge any CSS zoom from document/body (which causes WebKit viewport clipping and black background voids)
+  // - In desktop Tauri, use native Webview pageZoom via setZoom()
+  // - In browser mock mode, adjust root style scaling safely while maintaining 100% viewport coverage
   useEffect(() => {
-    try {
-      if (typeof document !== 'undefined') {
-        const zoomStr = String(zoomLevel);
-        document.documentElement.style.zoom = zoomStr;
-        if (document.body) {
-          (document.body.style as any).zoom = zoomStr;
-        }
+    // 1. Purge destructive document/body CSS zoom if present
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.zoom = '';
+      if (document.body) {
+        (document.body.style as any).zoom = '';
       }
+    }
+
+    // 2. Persist in localStorage
+    try {
       localStorage.setItem(STORAGE_KEY, String(zoomLevel));
     } catch (e) {
-      console.warn('Failed to apply or persist zoom level:', e);
+      console.warn('Failed to persist zoom level:', e);
     }
+
+    // 3. Apply zoom natively in Tauri or via safe root sizing in browser
+    pendingZoomRef.current = zoomLevel;
+    const applyZoom = async () => {
+      if (isApplyingZoomRef.current) return;
+      isApplyingZoomRef.current = true;
+      while (pendingZoomRef.current !== null) {
+        const target = pendingZoomRef.current;
+        pendingZoomRef.current = null;
+        if (isTauri) {
+          try {
+            const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+            await getCurrentWebview().setZoom(target);
+          } catch (err) {
+            console.warn('Failed to set native webview zoom:', err);
+          }
+        } else if (typeof document !== 'undefined') {
+          const root = document.getElementById('root');
+          if (root) {
+            if (target === DEFAULT_ZOOM) {
+              root.style.zoom = '';
+              root.style.width = '100%';
+              root.style.height = '100%';
+            } else {
+              root.style.zoom = String(target);
+              root.style.width = `${Math.round((100 / target) * 100) / 100}%`;
+              root.style.height = `${Math.round((100 / target) * 100) / 100}%`;
+            }
+          }
+        }
+      }
+      isApplyingZoomRef.current = false;
+    };
+    applyZoom();
   }, [zoomLevel]);
 
   // Keyboard shortcuts (Cmd+= / Cmd+- / Cmd+0) and Mouse Wheel (Cmd + scroll)

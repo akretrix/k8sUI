@@ -28,6 +28,34 @@ export default defineConfig({
     minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
     // Produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_DEBUG,
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@xterm')) {
+              return 'vendor-xterm';
+            }
+            if (id.includes('lucide-react') || id.includes('@tabler/icons-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('js-yaml') || id.includes('anser')) {
+              return 'vendor-parsers';
+            }
+            if (id.includes('@tauri-apps')) {
+              return 'vendor-tauri';
+            }
+            if (id.includes('react') || id.includes('scheduler')) {
+              return 'vendor-react';
+            }
+            if (id.includes('@tanstack')) {
+              return 'vendor-tanstack';
+            }
+            return 'vendor-misc';
+          }
+        },
+      },
+    },
   },
   test: {
     globals: true,
