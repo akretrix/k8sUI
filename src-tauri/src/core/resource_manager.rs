@@ -587,9 +587,10 @@ impl GenericResourceManager {
         if is_namespaced && is_all_namespaces {
             // 1. Try cluster-wide list first
             let all_api = Api::all_with(self.client.clone(), &resource);
+            let lp = ListParams::default().limit(500);
             let cluster_res = tokio::time::timeout(
                 std::time::Duration::from_secs(20),
-                all_api.list(&ListParams::default()),
+                all_api.list(&lp),
             )
             .await;
 
@@ -634,9 +635,10 @@ impl GenericResourceManager {
                         let sem_clone = sem.clone();
                         tasks.push(async move {
                             let _permit = sem_clone.acquire().await.ok();
+                            let lp = ListParams::default().limit(500);
                             tokio::time::timeout(
                                 std::time::Duration::from_secs(12),
-                                ns_api.list(&ListParams::default()),
+                                ns_api.list(&lp),
                             )
                             .await
                         });
@@ -658,9 +660,10 @@ impl GenericResourceManager {
             }
         } else {
             let api = self.get_api(&resource, &caps, namespace);
+            let lp = ListParams::default().limit(500);
             let list_res = tokio::time::timeout(
                 std::time::Duration::from_secs(20),
-                api.list(&ListParams::default()),
+                api.list(&lp),
             )
             .await;
 
@@ -2515,7 +2518,7 @@ impl GenericResourceManager {
             let pod_api: Api<Pod> = Api::all(self.client.clone());
             if let Ok(Ok(pods)) = tokio::time::timeout(
                 std::time::Duration::from_secs(4),
-                pod_api.list(&ListParams::default()),
+                pod_api.list(&ListParams::default().limit(500)),
             )
             .await
             {
@@ -3159,7 +3162,7 @@ impl GenericResourceManager {
             Ok(self.get_api(&res, &caps, None))
         })();
 
-        let lp = ListParams::default();
+        let lp = ListParams::default().limit(500);
 
         // Execute all 9 cluster queries concurrently in parallel with safe 5s timeouts
         let (
@@ -3177,7 +3180,7 @@ impl GenericResourceManager {
             tokio::time::timeout(std::time::Duration::from_secs(15), pod_api.list(&lp)),
             tokio::time::timeout(std::time::Duration::from_secs(6), async {
                 if let Ok(api) = node_metrics_api {
-                    let lp_m = ListParams::default();
+                    let lp_m = ListParams::default().limit(500);
                     api.list(&lp_m).await.ok().map(|l| l.items)
                 } else {
                     None

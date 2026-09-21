@@ -8,6 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
   RowSelectionState,
+  SortingState,
 } from '@tanstack/react-table';
 import { api } from '../../api/tauriClient';
 import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -72,10 +73,24 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
 }) => {
   const [internalGlobalFilter, setInternalGlobalFilter] = useState('');
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [isInstallingHelm, setIsInstallingHelm] = useState(false);
   const isHelm = ['helm', 'helmrelease', 'helm-releases', 'helmreleases'].includes(kind.toLowerCase());
   const globalFilter = externalGlobalFilter !== undefined ? externalGlobalFilter : internalGlobalFilter;
   const setGlobalFilter = onFilterQueryChange || setInternalGlobalFilter;
+
+  // Debounce filter for performance
+  const [localFilter, setLocalFilter] = useState(globalFilter ?? '');
+  useEffect(() => {
+    setLocalFilter(globalFilter ?? '');
+  }, [globalFilter]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (setGlobalFilter) setGlobalFilter(localFilter);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [localFilter, setGlobalFilter]);
 
   // Reset row selection when switching kind or namespaces
   useEffect(() => {
@@ -866,9 +881,11 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
       globalFilter,
       columnVisibility,
       rowSelection,
+      sorting,
     },
     enableRowSelection: true,
     onRowSelectionChange: setRowSelection,
+    onSortingChange: setSorting,
     getRowId: (row, index) => `${row.namespace || 'cluster'}/${row.name || index}`,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -922,8 +939,8 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
           <input
             type="text"
             placeholder={`Filter ${kind}...`}
-            value={globalFilter ?? ''}
-            onChange={(e) => setGlobalFilter(e.target.value)}
+            value={localFilter ?? ''}
+            onChange={(e) => setLocalFilter(e.target.value)}
             className="bg-surface border border-border rounded-md px-3 py-1.5 text-xs text-gray-200 w-64 focus:outline-none focus:border-brand-500 transition-colors font-mono"
           />
         </div>
