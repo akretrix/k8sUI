@@ -388,9 +388,9 @@ impl AwsSsoManager {
             sso_region,
             status: "authenticated".to_string(),
             last_synced: Some("Just now".to_string()),
-            accounts_count: 2,
-            clusters_count: 2,
-            assigned_role: Some("AdministratorAccess/devops@demo-org.com".to_string()),
+            accounts_count: 1, // To be expanded by real account discovery later if needed
+            clusters_count: 0, // Will be updated during cluster discovery
+            assigned_role: None,
         };
 
         let mut write = self.orgs.write().await;
@@ -401,33 +401,128 @@ impl AwsSsoManager {
 
     pub async fn discover_clusters_for_org(&self, org_id: &str) -> Vec<ClusterContextSummary> {
         let read = self.orgs.read().await;
-        let target_org = read.iter().find(|o| o.id == org_id);
+        let target_org = read.iter().find(|o| o.id == org_id).cloned();
+        drop(read);
 
-        if let Some(_org) = target_org {
-            vec![
-                ClusterContextSummary {
-                    id: "eks:111122223333:us-east-1:pdn-acme".to_string(),
-                    name: "pdn-acme".to_string(),
-                    provider: "eks".to_string(),
-                    environment: EnvironmentTier::Production,
-                    server_url: "https://B78A1239DF55A2C.gr7.us-east-1.eks.amazonaws.com"
-                        .to_string(),
-                    current_namespace: "pdn-acme-backend".to_string(),
-                    is_active: false,
-                },
-                ClusterContextSummary {
-                    id: "eks:444455556666:us-east-1:qa-acme".to_string(),
-                    name: "qa-acme".to_string(),
-                    provider: "eks".to_string(),
-                    environment: EnvironmentTier::Development,
-                    server_url: "https://A94B3C58DF12A1B.gr7.us-east-1.eks.amazonaws.com"
-                        .to_string(),
-                    current_namespace: "qa-acme-backend".to_string(),
-                    is_active: false,
-                },
-            ]
-        } else {
-            vec![]
+        let org = match target_org {
+            Some(o) => o,
+            None => return vec![],
+        };
+
+        // Execute AWS CLI to list clusters using the provided profile alias
+        let list_output = match tokio::process::Command::new("aws")
+            .args(&[
+                "eks",
+                "list-clusters",
+                "--profile",
+                &org.alias,
+                "--region",
+                &org.sso_region,
+                "--output",
+                "json",
+            ])
+            .output()
+            .await
+        {
+            Ok(out) => out,
+            Err(e) => {
+                tracing::error!("Failed to execute aws cli for EKS discovery: {}", e);
+                return vec![];
+            }
+        };
+
+        if !list_output.status.success() {
+            let err = String::from_utf8_lossy(&list_output.stderr);
+            tracing::error!("AWS CLI error listing clusters: {}", err);
+            return vec![];
         }
+
+        let parsed: serde_json::Value = match serde_json::from_slice(&list_output.stdout) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("Failed to parse aws cli output: {}", e);
+                return vec![];
+            }
+        };
+
+        let clusters = match parsed.get("clusters").and_then(|c| c.as_array()) {
+            Some(arr) => arr,
+            None => return vec![],
+        };
+
+        let mut discovered = Vec::new();
+
+        for cluster_val in clusters {
+            if let Some(cluster_name) = cluster_val.as_str() {
+                // Describe the cluster to get its endpoint and ARN
+                let desc_output = match tokio::process::Command::new("aws")
+                    .args(&[
+                        "eks",
+                        "describe-cluster",
+                        "--name",
+                        cluster_name,
+                        "--profile",
+                        &org.alias,
+                        "--region",
+                        &org.sso_region,
+                        "--output",
+                        "json",
+                    ])
+                    .output()
+                    .await
+                {
+                    Ok(out) => out,
+                    Err(_) => continue,
+                };
+
+                if !desc_output.status.success() {
+                    continue;
+                }
+
+                let desc_parsed: serde_json::Value = match serde_json::from_slice(&desc_output.stdout) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+
+                let cluster = desc_parsed.get("cluster");
+                let endpoint = cluster
+                    .and_then(|c| c.get("endpoint"))
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("https://unknown-endpoint")
+                    .to_string();
+                let arn = cluster
+                    .and_then(|c| c.get("arn"))
+                    .and_then(|a| a.as_str())
+                    .unwrap_or(&format!("eks:unknown:{}:{}", org.sso_region, cluster_name))
+                    .to_string();
+
+                // Guess environment from name
+                let env = if cluster_name.to_lowercase().contains("prod") || cluster_name.to_lowercase().contains("pdn") {
+                    EnvironmentTier::Production
+                } else if cluster_name.to_lowercase().contains("qa") || cluster_name.to_lowercase().contains("stg") {
+                    EnvironmentTier::Staging
+                } else {
+                    EnvironmentTier::Development
+                };
+
+                discovered.push(ClusterContextSummary {
+                    id: arn,
+                    name: cluster_name.to_string(),
+                    provider: "eks".to_string(),
+                    environment: env,
+                    server_url: endpoint,
+                    current_namespace: "default".to_string(),
+                    is_active: false,
+                });
+            }
+        }
+
+        // Update the clusters_count in the org
+        let mut write = self.orgs.write().await;
+        if let Some(o) = write.iter_mut().find(|o| o.id == org_id) {
+            o.clusters_count = discovered.len();
+        }
+
+        discovered
     }
 }

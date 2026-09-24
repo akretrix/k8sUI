@@ -15,8 +15,11 @@ target
 *.log
 .DS_Store
 Thumbs.db
-.vscode
-.idea
+.vscode/
+.idea/
+*.iml
+*.iws
+out/
 .pnpm-store/
 .claude/
 
