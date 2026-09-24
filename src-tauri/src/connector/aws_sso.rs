@@ -411,7 +411,7 @@ impl AwsSsoManager {
 
         // Execute AWS CLI to list clusters using the provided profile alias
         let list_output = match tokio::process::Command::new("aws")
-            .args(&[
+            .args([
                 "eks",
                 "list-clusters",
                 "--profile",
@@ -456,7 +456,7 @@ impl AwsSsoManager {
             if let Some(cluster_name) = cluster_val.as_str() {
                 // Describe the cluster to get its endpoint and ARN
                 let desc_output = match tokio::process::Command::new("aws")
-                    .args(&[
+                    .args([
                         "eks",
                         "describe-cluster",
                         "--name",
