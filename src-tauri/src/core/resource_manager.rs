@@ -588,11 +588,8 @@ impl GenericResourceManager {
             // 1. Try cluster-wide list first
             let all_api = Api::all_with(self.client.clone(), &resource);
             let lp = ListParams::default().limit(500);
-            let cluster_res = tokio::time::timeout(
-                std::time::Duration::from_secs(20),
-                all_api.list(&lp),
-            )
-            .await;
+            let cluster_res =
+                tokio::time::timeout(std::time::Duration::from_secs(20), all_api.list(&lp)).await;
 
             match cluster_res {
                 Ok(Ok(list)) => {
@@ -661,11 +658,8 @@ impl GenericResourceManager {
         } else {
             let api = self.get_api(&resource, &caps, namespace);
             let lp = ListParams::default().limit(500);
-            let list_res = tokio::time::timeout(
-                std::time::Duration::from_secs(20),
-                api.list(&lp),
-            )
-            .await;
+            let list_res =
+                tokio::time::timeout(std::time::Duration::from_secs(20), api.list(&lp)).await;
 
             match list_res {
                 Ok(Ok(list)) => {

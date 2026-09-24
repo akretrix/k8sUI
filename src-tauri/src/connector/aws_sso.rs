@@ -479,10 +479,11 @@ impl AwsSsoManager {
                     continue;
                 }
 
-                let desc_parsed: serde_json::Value = match serde_json::from_slice(&desc_output.stdout) {
-                    Ok(v) => v,
-                    Err(_) => continue,
-                };
+                let desc_parsed: serde_json::Value =
+                    match serde_json::from_slice(&desc_output.stdout) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
 
                 let cluster = desc_parsed.get("cluster");
                 let endpoint = cluster
@@ -497,9 +498,13 @@ impl AwsSsoManager {
                     .to_string();
 
                 // Guess environment from name
-                let env = if cluster_name.to_lowercase().contains("prod") || cluster_name.to_lowercase().contains("pdn") {
+                let env = if cluster_name.to_lowercase().contains("prod")
+                    || cluster_name.to_lowercase().contains("pdn")
+                {
                     EnvironmentTier::Production
-                } else if cluster_name.to_lowercase().contains("qa") || cluster_name.to_lowercase().contains("stg") {
+                } else if cluster_name.to_lowercase().contains("qa")
+                    || cluster_name.to_lowercase().contains("stg")
+                {
                     EnvironmentTier::Staging
                 } else {
                     EnvironmentTier::Development
