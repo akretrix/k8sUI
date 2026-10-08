@@ -2877,6 +2877,54 @@ impl GenericResourceManager {
         Ok(true)
     }
 
+    /// Formats an RFC 1123 compliant Job name within Kubernetes' strict 63-character limit.
+    /// Kubernetes automatically sets `job-name` and `batch.kubernetes.io/job-name` labels
+    /// on both Job metadata and the Pod template metadata. Because label values cannot exceed
+    /// 63 characters, any Job with a name longer than 63 characters is rejected with HTTP 422.
+    pub fn format_safe_job_name(base: &str, tag: &str, timestamp: &str) -> String {
+        let suffix = format!("-{}-{}", tag, timestamp);
+        let max_base_len = 63usize.saturating_sub(suffix.len());
+
+        // Strip previous manual/retry timestamps to avoid compounding suffixes
+        let clean_base = if let Some(idx) = base.rfind("-manual-") {
+            let rest = &base[idx + 8..];
+            if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+                &base[..idx]
+            } else {
+                base
+            }
+        } else if let Some(idx) = base.rfind("-retry-") {
+            let rest = &base[idx + 7..];
+            if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()) {
+                &base[..idx]
+            } else {
+                base
+            }
+        } else {
+            base.strip_suffix("-cronjob")
+                .filter(|s| !s.is_empty())
+                .unwrap_or(base)
+        };
+
+        let trimmed_base = if clean_base.len() > max_base_len {
+            let mut end = max_base_len;
+            while end > 0 && !clean_base.is_char_boundary(end) {
+                end -= 1;
+            }
+            clean_base[..end].trim_end_matches('-')
+        } else {
+            clean_base.trim_end_matches('-')
+        };
+
+        let effective_base = if trimmed_base.is_empty() {
+            "job"
+        } else {
+            trimmed_base
+        };
+
+        format!("{}{}", effective_base, suffix)
+    }
+
     pub async fn trigger_cronjob(
         &self,
         name: &str,
@@ -2899,7 +2947,7 @@ impl GenericResourceManager {
             .ok_or_else(|| ConnectorError::Generic("jobTemplate has no spec".to_string()))?;
 
         let now_ts = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-        let manual_job_name = format!("{}-manual-{}", name, now_ts);
+        let manual_job_name = Self::format_safe_job_name(name, "manual", &now_ts);
 
         let mut annotations = serde_json::Map::new();
         if let Some(orig_annotations) = job_template
@@ -3053,7 +3101,7 @@ impl GenericResourceManager {
             .unwrap_or(json!([]));
 
         let now_ts = chrono::Utc::now().format("%Y%m%d%H%M%S").to_string();
-        let retry_job_name = format!("{}-retry-{}", name, now_ts);
+        let retry_job_name = Self::format_safe_job_name(name, "retry", &now_ts);
 
         let new_job_json = json!({
             "apiVersion": "batch/v1",
@@ -3793,5 +3841,50 @@ mod tests {
         assert_eq!(parse_memory_gib("4Gi"), 4.0);
         assert_eq!(parse_memory_gib("512Mi"), 0.5);
         assert_eq!(parse_memory_gib("1024Mi"), 1.0);
+    }
+
+    #[test]
+    fn test_format_safe_job_name_within_63_chars() {
+        // Real case from issue: "zoho-fuerza-interna-to-redshift-full-cronjob" (44 chars)
+        let name = "zoho-fuerza-interna-to-redshift-full-cronjob";
+        let ts = "20261008191846"; // 14 chars
+        let job_name = GenericResourceManager::format_safe_job_name(name, "manual", ts);
+
+        assert!(
+            job_name.len() <= 63,
+            "Job name length must be <= 63, got {} for '{}'",
+            job_name.len(),
+            job_name
+        );
+        assert_eq!(
+            job_name,
+            "zoho-fuerza-interna-to-redshift-full-manual-20261008191846"
+        );
+        assert_eq!(job_name.len(), 58);
+
+        // Test retry tag on already suffixed or long name
+        let retry_name = GenericResourceManager::format_safe_job_name(&job_name, "retry", ts);
+        assert!(
+            retry_name.len() <= 63,
+            "Retry job name length must be <= 63, got {} for '{}'",
+            retry_name.len(),
+            retry_name
+        );
+
+        // Extremely long name (> 80 chars)
+        let very_long = "this-is-an-extremely-long-cronjob-workload-name-that-exceeds-all-limits-cronjob";
+        let truncated_job = GenericResourceManager::format_safe_job_name(very_long, "manual", ts);
+        assert!(
+            truncated_job.len() <= 63,
+            "Truncated job name must be <= 63, got {}",
+            truncated_job.len()
+        );
+        assert!(!truncated_job.contains("--"));
+        assert!(truncated_job.ends_with("-manual-20261008191846"));
+
+        // Short name preservation
+        let short = "my-job";
+        let short_res = GenericResourceManager::format_safe_job_name(short, "manual", ts);
+        assert_eq!(short_res, format!("my-job-manual-{}", ts));
     }
 }
