@@ -281,7 +281,10 @@ pub fn find_profiles_for_org(start_url: &str, alias: &str) -> Vec<AwsSsoProfileD
         .filter(|p| {
             if let Some(ref u) = p.start_url {
                 let norm_u = normalize_start_url(u);
-                if norm_u == norm_target || norm_u.contains(&norm_target) || norm_target.contains(&norm_u) {
+                if norm_u == norm_target
+                    || norm_u.contains(&norm_target)
+                    || norm_target.contains(&norm_u)
+                {
                     return true;
                 }
             }
@@ -459,7 +462,9 @@ pub async fn login_aws_sso_native(
                 );
 
                 // Auto-discover accounts & write profiles to ~/.aws/config!
-                let _ = discover_and_save_sso_profiles_from_token(&access_token, region, session_name).await;
+                let _ =
+                    discover_and_save_sso_profiles_from_token(&access_token, region, session_name)
+                        .await;
 
                 return Ok(format!(
                     "Successfully authenticated AWS SSO for '{}' (Code: {})",
@@ -779,12 +784,19 @@ impl AwsSsoManager {
                 .unwrap_or_else(|| "AdministratorAccess".to_string());
 
             let domain_id = if let Some(domain) = s.start_url.strip_prefix("https://") {
-                domain.split('.').next().unwrap_or(&s.session_name).to_string()
+                domain
+                    .split('.')
+                    .next()
+                    .unwrap_or(&s.session_name)
+                    .to_string()
             } else {
                 s.session_name.clone()
             };
 
-            if !initial_orgs.iter().any(|o: &AwsSsoOrgConfig| o.id == domain_id) {
+            if !initial_orgs
+                .iter()
+                .any(|o: &AwsSsoOrgConfig| o.id == domain_id)
+            {
                 initial_orgs.push(AwsSsoOrgConfig {
                     id: domain_id,
                     alias: s.session_name.clone(),
@@ -834,7 +846,8 @@ impl AwsSsoManager {
 
         // If a valid cached token already exists for this session, auto-discover & save profiles!
         if let Some(cached_token) = get_cached_sso_token(&alias, &start_url) {
-            let _ = discover_and_save_sso_profiles_from_token(&cached_token, &sso_region, &alias).await;
+            let _ =
+                discover_and_save_sso_profiles_from_token(&cached_token, &sso_region, &alias).await;
         }
 
         let matching = find_profiles_for_org(&start_url, &alias);
@@ -876,7 +889,10 @@ impl AwsSsoManager {
 
     pub async fn discover_clusters_for_org(&self, org_id: &str) -> Vec<ClusterContextSummary> {
         let read = self.orgs.read().await;
-        let target_org = read.iter().find(|o| o.id == org_id || o.alias == org_id).cloned();
+        let target_org = read
+            .iter()
+            .find(|o| o.id == org_id || o.alias == org_id)
+            .cloned();
         drop(read);
 
         let org = match target_org {
@@ -913,16 +929,17 @@ impl AwsSsoManager {
                     .unwrap_or(cluster_ref.clone());
 
                 let user_name = ctx.context.as_ref().map(|c| c.user.as_str());
-                let user_info = user_name.and_then(|uname| {
-                    kube_config.auth_infos.iter().find(|u| u.name == uname)
-                });
+                let user_info = user_name
+                    .and_then(|uname| kube_config.auth_infos.iter().find(|u| u.name == uname));
 
                 let user_profile = user_info.and_then(|u| {
                     u.auth_info.as_ref().and_then(|ai| {
                         ai.exec.as_ref().and_then(|exec| {
                             exec.env.as_ref().and_then(|envs| {
                                 envs.iter()
-                                    .find(|e| e.get("name").map(|n| n.as_str()) == Some("AWS_PROFILE"))
+                                    .find(|e| {
+                                        e.get("name").map(|n| n.as_str()) == Some("AWS_PROFILE")
+                                    })
                                     .and_then(|e| e.get("value").cloned())
                             })
                         })
@@ -934,7 +951,10 @@ impl AwsSsoManager {
                     Some(ctx.name.as_str())
                 } else if cluster_ref.starts_with("arn:aws:eks:") {
                     Some(cluster_ref.as_str())
-                } else if user_name.map(|u| u.starts_with("arn:aws:eks:")).unwrap_or(false) {
+                } else if user_name
+                    .map(|u| u.starts_with("arn:aws:eks:"))
+                    .unwrap_or(false)
+                {
                     user_name
                 } else {
                     None
@@ -945,12 +965,33 @@ impl AwsSsoManager {
                     continue;
                 }
 
-                let (region_opt, account_id_opt, cluster_name, is_arn_name) = if let Some(arn) = arn_candidate {
+                let (region_opt, account_id_opt, cluster_name, is_arn_name) = if let Some(arn) =
+                    arn_candidate
+                {
                     let parts: Vec<&str> = arn.split(':').collect();
-                    let region = parts.get(3).copied().filter(|s| !s.is_empty()).unwrap_or(&org.sso_region).to_string();
-                    let account_id = parts.get(4).copied().filter(|s| !s.is_empty()).unwrap_or("").to_string();
-                    let name = parts.get(5).and_then(|s| s.strip_prefix("cluster/")).unwrap_or(&ctx.name).to_string();
-                    (Some(region), Some(account_id), name, ctx.name.starts_with("arn:aws:eks:"))
+                    let region = parts
+                        .get(3)
+                        .copied()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&org.sso_region)
+                        .to_string();
+                    let account_id = parts
+                        .get(4)
+                        .copied()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = parts
+                        .get(5)
+                        .and_then(|s| s.strip_prefix("cluster/"))
+                        .unwrap_or(&ctx.name)
+                        .to_string();
+                    (
+                        Some(region),
+                        Some(account_id),
+                        name,
+                        ctx.name.starts_with("arn:aws:eks:"),
+                    )
                 } else {
                     let mut reg = None;
                     let mut cl_name = ctx.name.clone();
@@ -958,10 +999,14 @@ impl AwsSsoManager {
                         if let Some(Some(exec)) = u.auth_info.as_ref().map(|ai| ai.exec.as_ref()) {
                             if let Some(ref args) = exec.args {
                                 if let Some(pos) = args.iter().position(|a| a == "--region") {
-                                    if let Some(r) = args.get(pos + 1) { reg = Some(r.clone()); }
+                                    if let Some(r) = args.get(pos + 1) {
+                                        reg = Some(r.clone());
+                                    }
                                 }
                                 if let Some(pos) = args.iter().position(|a| a == "--cluster-name") {
-                                    if let Some(n) = args.get(pos + 1) { cl_name = n.clone(); }
+                                    if let Some(n) = args.get(pos + 1) {
+                                        cl_name = n.clone();
+                                    }
                                 }
                             }
                         }
@@ -973,7 +1018,12 @@ impl AwsSsoManager {
                             reg = Some(parts[idx].to_string());
                         }
                     }
-                    (reg.or_else(|| Some(org.sso_region.clone())), None, cl_name, false)
+                    (
+                        reg.or_else(|| Some(org.sso_region.clone())),
+                        None,
+                        cl_name,
+                        false,
+                    )
                 };
 
                 let alias = if !is_arn_name {
@@ -990,18 +1040,24 @@ impl AwsSsoManager {
                         .as_ref()
                         .map(|prof| target_profile_names.contains(&prof.to_lowercase()))
                         .unwrap_or(false)
-                    || (!target_account_ids.is_empty() && account_id_opt.is_none() && ctx.name.to_lowercase().contains(&org.alias.to_lowercase()));
+                    || (!target_account_ids.is_empty()
+                        && account_id_opt.is_none()
+                        && ctx.name.to_lowercase().contains(&org.alias.to_lowercase()));
 
                 if belongs_to_org {
                     let matched_profile = matching_profiles.iter().find(|p| {
                         account_id_opt.as_ref() == p.account_id.as_ref()
-                            || user_profile.as_ref().map(|up| up.to_lowercase()) == Some(p.profile_name.to_lowercase())
+                            || user_profile.as_ref().map(|up| up.to_lowercase())
+                                == Some(p.profile_name.to_lowercase())
                     });
 
                     let env = EnvironmentTier::from_name(&cluster_name);
-                    let final_acc_id = account_id_opt.or_else(|| matched_profile.and_then(|p| p.account_id.clone()));
-                    let final_acc_name = user_profile.or_else(|| matched_profile.map(|p| p.profile_name.clone()));
-                    let final_reg = region_opt.or_else(|| matched_profile.and_then(|p| p.region.clone()));
+                    let final_acc_id = account_id_opt
+                        .or_else(|| matched_profile.and_then(|p| p.account_id.clone()));
+                    let final_acc_name =
+                        user_profile.or_else(|| matched_profile.map(|p| p.profile_name.clone()));
+                    let final_reg =
+                        region_opt.or_else(|| matched_profile.and_then(|p| p.region.clone()));
                     let final_role = matched_profile.and_then(|p| p.role_name.clone());
 
                     let dedupe_core = (
@@ -1047,7 +1103,10 @@ impl AwsSsoManager {
                             d.account_id.as_deref().unwrap_or_default() == dedupe_core.0
                                 && d.region.as_deref().unwrap_or_default() == dedupe_core.1
                                 && d.name == dedupe_core.2
-                                && d.context_name.as_deref().unwrap_or("").starts_with("arn:aws:eks:")
+                                && d.context_name
+                                    .as_deref()
+                                    .unwrap_or("")
+                                    .starts_with("arn:aws:eks:")
                         }) {
                             discovered[pos] = summary;
                         } else if !discovered.iter().any(|d| d.id == summary.id) {
@@ -1062,7 +1121,10 @@ impl AwsSsoManager {
         let mut profiles_to_query: Vec<AwsSsoProfileDetail> = Vec::new();
         let mut seen_accounts = std::collections::HashSet::new();
         for p in matching_profiles {
-            let acc = p.account_id.clone().unwrap_or_else(|| p.profile_name.clone());
+            let acc = p
+                .account_id
+                .clone()
+                .unwrap_or_else(|| p.profile_name.clone());
             if seen_accounts.insert(acc) {
                 profiles_to_query.push(p);
             }
@@ -1070,7 +1132,10 @@ impl AwsSsoManager {
 
         if profiles_to_query.is_empty() {
             let all_profiles = parse_aws_sso_profiles();
-            if all_profiles.iter().any(|p| p.profile_name.eq_ignore_ascii_case(&org.alias)) {
+            if all_profiles
+                .iter()
+                .any(|p| p.profile_name.eq_ignore_ascii_case(&org.alias))
+            {
                 profiles_to_query.push(AwsSsoProfileDetail {
                     profile_name: org.alias.clone(),
                     session_name: None,
@@ -1082,7 +1147,8 @@ impl AwsSsoManager {
             } else {
                 tracing::warn!(
                     "No configured AWS profiles found in ~/.aws/config matching org '{}' ({})",
-                    org.alias, org.start_url
+                    org.alias,
+                    org.start_url
                 );
             }
         }
@@ -1096,7 +1162,14 @@ impl AwsSsoManager {
                 regions_to_try.push(org.sso_region.clone());
             }
             // Multi-region scan across standard regions
-            for r in ["eu-central-1", "eu-west-1", "us-east-1", "us-east-2", "us-west-2", "eu-west-2"] {
+            for r in [
+                "eu-central-1",
+                "eu-west-1",
+                "us-east-1",
+                "us-east-2",
+                "us-west-2",
+                "eu-west-2",
+            ] {
                 if !regions_to_try.contains(&r.to_string()) {
                     regions_to_try.push(r.to_string());
                 }
@@ -1168,10 +1241,11 @@ impl AwsSsoManager {
                             continue;
                         }
 
-                        let desc_parsed: serde_json::Value = match serde_json::from_slice(&desc_output.stdout) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
+                        let desc_parsed: serde_json::Value =
+                            match serde_json::from_slice(&desc_output.stdout) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
 
                         let cluster = desc_parsed.get("cluster");
                         let endpoint = cluster

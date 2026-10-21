@@ -3872,7 +3872,8 @@ mod tests {
         );
 
         // Extremely long name (> 80 chars)
-        let very_long = "this-is-an-extremely-long-cronjob-workload-name-that-exceeds-all-limits-cronjob";
+        let very_long =
+            "this-is-an-extremely-long-cronjob-workload-name-that-exceeds-all-limits-cronjob";
         let truncated_job = GenericResourceManager::format_safe_job_name(very_long, "manual", ts);
         assert!(
             truncated_job.len() <= 63,
