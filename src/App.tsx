@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, isTauri } from './api/tauriClient';
 import { Header } from './components/layout/Header';
@@ -19,6 +19,7 @@ import { PortForwardFloatingBanner } from './components/portforward/PortForwardF
 import { PendingAiProposal, PodSummary, ClusterContextSummary, ActivePortForward } from './types/cluster';
 import { AppTab, RESOURCE_TITLES } from './types/tabs';
 import { TabBar } from './components/layout/TabBar';
+import { ClusterRail, OpenClusterWorkspace } from './components/layout/ClusterRail';
 import { NewTabModal } from './components/layout/NewTabModal';
 import { ConfirmationModal, ConfirmationActionType, BatchTargetItem } from './components/common/ConfirmationModal';
 import { ScaleModal, ScaleTarget } from './components/common/ScaleModal';
@@ -279,12 +280,21 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleSelectTab = (tabId: string) => {
+  const handleSelectTab = async (tabId: string) => {
     setSelectedResourceForDescribe(null);
     setActiveTabId(tabId);
     const target = tabs.find((t) => t.id === tabId);
     if (target && target.clusterId && target.clusterId !== activeCluster?.id) {
-      connectMutation.mutate(target.clusterId);
+      try {
+        const switched = await api.switchCluster(target.clusterId);
+        if (switched) {
+          queryClient.setQueryData(['activeCluster'], switched);
+        } else {
+          connectMutation.mutate(target.clusterId);
+        }
+      } catch {
+        connectMutation.mutate(target.clusterId);
+      }
     }
   };
 
@@ -305,7 +315,7 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleOpenClusterInNewTab = (cluster: ClusterContextSummary) => {
+  const handleOpenClusterInNewTab = async (cluster: ClusterContextSummary) => {
     const newTab: AppTab = {
       id: `tab-${cluster.id}-${Date.now()}`,
       clusterId: cluster.id,
@@ -319,7 +329,16 @@ export const App: React.FC = () => {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
     if (cluster.id !== activeCluster?.id) {
-      connectMutation.mutate(cluster.id);
+      try {
+        const switched = await api.switchCluster(cluster.id);
+        if (switched) {
+          queryClient.setQueryData(['activeCluster'], switched);
+        } else {
+          connectMutation.mutate(cluster.id);
+        }
+      } catch {
+        connectMutation.mutate(cluster.id);
+      }
     }
   };
 
@@ -392,11 +411,20 @@ export const App: React.FC = () => {
     setIsNewTabModalOpen(true);
   };
 
-  const handleAddTabFromModal = (newTab: AppTab) => {
+  const handleAddTabFromModal = async (newTab: AppTab) => {
     setTabs((prev) => [...prev, newTab]);
     setActiveTabId(newTab.id);
     if (newTab.clusterId && newTab.clusterId !== activeCluster?.id) {
-      connectMutation.mutate(newTab.clusterId);
+      try {
+        const switched = await api.switchCluster(newTab.clusterId);
+        if (switched) {
+          queryClient.setQueryData(['activeCluster'], switched);
+        } else {
+          connectMutation.mutate(newTab.clusterId);
+        }
+      } catch {
+        connectMutation.mutate(newTab.clusterId);
+      }
     }
   };
 
@@ -412,6 +440,8 @@ export const App: React.FC = () => {
       setActiveTabId(duplicated.id);
     }
   };
+
+
 
   const handleSetNamespaces = (namespaces: string[]) => {
     setTabs((prev) =>
@@ -435,6 +465,63 @@ export const App: React.FC = () => {
     queryKey: ['activeCluster'],
     queryFn: api.getActiveCluster,
   });
+
+  // Derive active cluster workspaces from open tabs for ClusterRail
+  const openClusters = useMemo<OpenClusterWorkspace[]>(() => {
+    const map = new Map<string, OpenClusterWorkspace>();
+    tabs.forEach((t) => {
+      if (t.clusterId) {
+        const existing = map.get(t.clusterId);
+        if (existing) {
+          existing.tabCount += 1;
+        } else {
+          map.set(t.clusterId, {
+            id: t.clusterId,
+            name: t.clusterName || t.clusterId,
+            environment: t.environment ? String(t.environment) : undefined,
+            tabCount: 1,
+            hasError: false,
+          });
+        }
+      }
+    });
+
+    if (activeCluster && !map.has(activeCluster.id)) {
+      map.set(activeCluster.id, {
+        id: activeCluster.id,
+        name: activeCluster.name,
+        environment: activeCluster.environment ? String(activeCluster.environment) : undefined,
+        tabCount: 0,
+        hasError: false,
+      });
+    }
+
+    return Array.from(map.values());
+  }, [tabs, activeCluster]);
+
+  const handleSelectClusterFromRail = (clusterId: string) => {
+    const clusterTab = tabs.find((t) => t.clusterId === clusterId);
+    if (clusterTab) {
+      handleSelectTab(clusterTab.id);
+    } else {
+      const cluster = clusters.find((c) => c.id === clusterId) || (activeCluster?.id === clusterId ? activeCluster : null);
+      if (cluster) {
+        handleOpenClusterInNewTab(cluster);
+      }
+    }
+  };
+
+  const handleCloseClusterFromRail = (clusterId: string) => {
+    const remainingTabs = tabs.filter((t) => t.clusterId !== clusterId);
+    if (remainingTabs.length > 0) {
+      setTabs(remainingTabs);
+      if (activeTab?.clusterId === clusterId) {
+        handleSelectTab(remainingTabs[0].id);
+      }
+    } else {
+      handleCloseAllTabs();
+    }
+  };
 
   // Synchronize initial tab cluster information when activeCluster is first detected
   useEffect(() => {
@@ -1027,8 +1114,16 @@ export const App: React.FC = () => {
         onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
       />
 
-      {/* Main Workload View with Sidebar */}
+      {/* Main Workload View with Cluster Left Rail & Sidebar */}
       <div className="flex-1 flex min-h-0 relative">
+        <ClusterRail
+          openClusters={openClusters}
+          activeClusterId={activeCluster?.id}
+          onSelectCluster={handleSelectClusterFromRail}
+          onCloseCluster={handleCloseClusterFromRail}
+          onAddCluster={() => setIsNewTabModalOpen(true)}
+        />
+
         <Sidebar
           activeResource={activeResource}
           onSelectResource={handleSelectResource}

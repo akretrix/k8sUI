@@ -46,10 +46,11 @@ pub enum ConnectorError {
     Generic(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum EnvironmentTier {
     Production,
     Staging,
+    #[default]
     Development,
     Local,
 }
@@ -73,7 +74,7 @@ impl EnvironmentTier {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ClusterContextSummary {
     pub id: String,
     pub name: String,
@@ -82,6 +83,22 @@ pub struct ClusterContextSummary {
     pub server_url: String,
     pub current_namespace: String,
     pub is_active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub k8s_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ import { AppTab } from '../../types/tabs';
 describe('TabBar', () => {
   const sampleTabs: AppTab[] = [
     { id: 'tab-1', clusterId: 'c-1', clusterName: 'qa-acme', resource: 'pods', title: 'Pods', namespaces: [], filterQuery: '' },
-    { id: 'tab-2', clusterId: 'c-2', clusterName: 'pdn-axonic', resource: 'deployments', title: 'Deployments', namespaces: ['cert-manager'], filterQuery: 'nginx' },
+    { id: 'tab-2', clusterId: 'c-2', clusterName: 'prod-cluster', resource: 'deployments', title: 'Deployments', namespaces: ['cert-manager'], filterQuery: 'nginx' },
   ];
 
   it('renders tab titles, cluster badges, and namespace badges', () => {
@@ -25,7 +25,7 @@ describe('TabBar', () => {
     expect(screen.getByText('Pods')).toBeInTheDocument();
     expect(screen.getByText('Deployments')).toBeInTheDocument();
     expect(screen.getByText('qa-acme')).toBeInTheDocument();
-    expect(screen.getByText('pdn-axonic')).toBeInTheDocument();
+    expect(screen.getByText('prod-cluster')).toBeInTheDocument();
     expect(screen.getByText('cert-manager')).toBeInTheDocument();
     expect(screen.getByText('"nginx"')).toBeInTheDocument();
   });

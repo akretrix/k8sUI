@@ -110,6 +110,8 @@ let mockClusters: ClusterContextSummary[] = [
   {
     id: 'eks:111122223333:us-east-1:pdn-acme',
     name: 'pdn-acme',
+    alias: 'pdn-acme-us-east-1',
+    context_name: 'pdn-acme-us-east-1',
     provider: 'eks',
     environment: 'Production',
     server_url: 'https://B78A1239DF55A2C.gr7.us-east-1.eks.amazonaws.com',
@@ -125,6 +127,8 @@ let mockClusters: ClusterContextSummary[] = [
   {
     id: 'eks:444455556666:us-east-1:qa-acme',
     name: 'qa-acme',
+    alias: 'qa-acme-us-east-1',
+    context_name: 'qa-acme-us-east-1',
     provider: 'eks',
     environment: 'Development',
     server_url: 'https://A94B3C58DF12A1B.gr7.us-east-1.eks.amazonaws.com',
@@ -140,6 +144,8 @@ let mockClusters: ClusterContextSummary[] = [
   {
     id: 'local:kind-k9s-dev',
     name: 'kind-k9s-dev',
+    alias: 'kind-k9s-dev',
+    context_name: 'kind-k9s-dev',
     provider: 'local',
     environment: 'Local',
     server_url: 'https://127.0.0.1:54321',
@@ -462,6 +468,17 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
       });
       return active;
     }
+
+    case 'switch_cluster': {
+      mockClusters = mockClusters.map((c) => ({
+        ...c,
+        is_active: c.id === args.clusterId || c.id === args.cluster_id,
+      }));
+      return mockClusters.find((c) => c.is_active) || null;
+    }
+
+    case 'get_connected_clusters':
+      return mockClusters.filter((c) => c.is_active);
 
     case 'get_active_cluster':
       return mockClusters.find((c) => c.is_active) || mockClusters[0];
@@ -1013,6 +1030,12 @@ async function mockClient(cmd: string, args: Record<string, any>): Promise<any> 
       // Never hardcode org-specific SSO URLs, regions, or profile names here.
       return [];
 
+    case 'check_aws_cli_installed':
+      return true;
+
+    case 'auto_configure_aws_sso':
+      return [`${args.alias}-admin`];
+
     case 'aws_sso_login':
       return `Successfully authenticated AWS SSO for '${args.session_name || args.profile || 'default'}'`;
 
@@ -1261,6 +1284,8 @@ export interface HelmReleaseDetails {
 export const api = {
   getClusters: () => invokeTauri<ClusterContextSummary[]>('get_available_clusters'),
   connectCluster: (clusterId: string) => invokeTauri<ClusterContextSummary>('connect_cluster', { clusterId }),
+  switchCluster: (clusterId: string) => invokeTauri<ClusterContextSummary | null>('switch_cluster', { clusterId }),
+  getConnectedClusters: () => invokeTauri<ClusterContextSummary[]>('get_connected_clusters'),
   reconnectCluster: (clusterId?: string) => invokeTauri<ClusterHealthInfo>('reconnect_cluster', { clusterId }),
   checkClusterHealth: () => invokeTauri<ClusterHealthInfo>('check_cluster_health'),
   getActiveCluster: () => invokeTauri<ClusterContextSummary | null>('get_active_cluster'),
@@ -1352,6 +1377,16 @@ export const api = {
     invokeTauri<string>('open_terminal_sso_login', { profile }),
   getSsoLoginCommand: (profile?: string) =>
     invokeTauri<string>('get_sso_login_command', { profile }),
+  checkAwsCliInstalled: () =>
+    invokeTauri<boolean>('check_aws_cli_installed'),
+  autoConfigureAwsSso: (params: { alias: string; startUrl: string; ssoRegion: string }) =>
+    invokeTauri<string[]>('auto_configure_aws_sso', {
+      alias: params.alias,
+      startUrl: params.startUrl,
+      start_url: params.startUrl,
+      ssoRegion: params.ssoRegion,
+      sso_region: params.ssoRegion,
+    }),
   getHelmReleaseDetails: (name: string, namespace?: string) =>
     invokeTauri<HelmReleaseDetails>('get_helm_release_details', { name, namespace }),
   installHelmRelease: (params: {

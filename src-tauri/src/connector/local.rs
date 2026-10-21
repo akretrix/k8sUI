@@ -61,6 +61,7 @@ impl ClusterConnector for LocalConnector {
             server_url: self.cluster_url.clone(),
             current_namespace: "default".to_string(),
             is_active: true,
+            ..Default::default()
         })
     }
 

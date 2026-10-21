@@ -47,6 +47,7 @@ export const ClusterSwitcher: React.FC<ClusterSwitcherProps> = ({
       // Meaningful metadata fields without generic cloud endpoint URLs (which contain 'amazonaws' and falsely match 'zona')
       const searchTarget = [
         c.name,
+        c.alias,
         c.account_name,
         c.account_id,
         c.region,
@@ -133,7 +134,7 @@ export const ClusterSwitcher: React.FC<ClusterSwitcherProps> = ({
         </div>
         <div className="flex flex-col items-start text-left">
           <div className="flex items-center space-x-2">
-            <span className="font-semibold">{activeCluster?.name || 'Select Cluster'}</span>
+            <span className="font-semibold">{activeCluster?.alias || activeCluster?.name || 'Select Cluster'}</span>
             {activeCluster && (
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider ${getEnvBadgeClass(
@@ -253,7 +254,12 @@ export const ClusterSwitcher: React.FC<ClusterSwitcherProps> = ({
                     <div className="flex flex-col pr-2 min-w-0">
                       <div className="font-semibold flex items-center space-x-1.5 truncate">
                         <Cloud className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                        <span className="truncate">{cluster.name}</span>
+                        <span className="truncate">{cluster.alias || cluster.name}</span>
+                        {cluster.alias && cluster.alias !== cluster.name && (
+                          <span className="text-[10px] text-gray-400 font-mono truncate">
+                            ({cluster.name})
+                          </span>
+                        )}
                         {cluster.k8s_version && (
                           <span className="text-[10px] text-gray-400 font-mono">
                             v{cluster.k8s_version}
@@ -292,11 +298,11 @@ export const ClusterSwitcher: React.FC<ClusterSwitcherProps> = ({
                             onOpenClusterInNewTab(cluster);
                             setIsOpen(false);
                           }}
-                          className="px-1.5 py-0.5 rounded bg-surface hover:bg-indigo-600/30 text-gray-400 hover:text-indigo-200 border border-border text-[10px] font-mono flex items-center space-x-1 transition-colors"
-                          title="Open cluster in new tab"
+                          className="px-2 py-0.5 rounded bg-cyan-950/60 hover:bg-cyan-900/80 text-cyan-300 hover:text-cyan-100 border border-cyan-800/60 text-[10px] font-medium flex items-center space-x-1 transition-all shadow-sm"
+                          title={`Open ${cluster.name} in a new concurrent tab`}
                         >
-                          <Plus className="w-2.5 h-2.5" />
-                          <span>Tab</span>
+                          <Plus className="w-2.5 h-2.5 text-cyan-400" />
+                          <span>+ New Tab</span>
                         </button>
                       )}
                     </div>

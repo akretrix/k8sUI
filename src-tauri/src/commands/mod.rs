@@ -97,11 +97,24 @@ pub async fn check_cluster_health(
         Err(e) => {
             let err_str = e.to_string();
             let lower = err_str.to_lowercase();
+            let is_profile_missing = lower.contains("could not be found") && lower.contains("profile");
+            let is_aws_missing = (lower.contains("auth exec command 'aws'") || lower.contains("aws: not found"))
+                && lower.contains("no such file");
+
+            let friendly_msg = if is_profile_missing {
+                Some(format!("AWS Profile Missing: {} — Please run 'aws configure sso' or click Configure AWS SSO.", err_str))
+            } else if is_aws_missing {
+                Some("AWS CLI ('aws') is not installed or not in PATH. Please run 'brew install awscli' to enable EKS authentication.".to_string())
+            } else {
+                Some(err_str)
+            };
+
             let status = if lower.contains("401")
                 || lower.contains("unauthorized")
                 || lower.contains("token")
                 || lower.contains("expired")
                 || lower.contains("unrecognizedclientexception")
+                || is_profile_missing
             {
                 ClusterHealthStatus::AuthExpired
             } else {
@@ -109,7 +122,7 @@ pub async fn check_cluster_health(
             };
             return Ok(ApiResponse::ok(ClusterHealthInfo {
                 status,
-                message: Some(err_str),
+                message: friendly_msg,
                 latency_ms: None,
                 k8s_version: None,
                 detected_profile,
@@ -132,12 +145,25 @@ pub async fn check_cluster_health(
         Err(e) => {
             let err_str = e.to_string();
             let lower = err_str.to_lowercase();
+            let is_profile_missing = lower.contains("could not be found") && lower.contains("profile");
+            let is_aws_missing = (lower.contains("auth exec command 'aws'") || lower.contains("aws: not found"))
+                && lower.contains("no such file");
+
+            let friendly_msg = if is_profile_missing {
+                Some(format!("AWS Profile Missing: {} — Please run 'aws configure sso' or click Configure AWS SSO.", err_str))
+            } else if is_aws_missing {
+                Some("AWS CLI ('aws') is not installed or not in PATH. Please run 'brew install awscli' to enable EKS authentication.".to_string())
+            } else {
+                Some(err_str)
+            };
+
             let status = if lower.contains("401")
                 || lower.contains("unauthorized")
                 || lower.contains("token")
                 || lower.contains("expired")
                 || lower.contains("unrecognizedclientexception")
                 || lower.contains("auth exec command")
+                || is_profile_missing
             {
                 ClusterHealthStatus::AuthExpired
             } else {
@@ -145,7 +171,7 @@ pub async fn check_cluster_health(
             };
             Ok(ApiResponse::ok(ClusterHealthInfo {
                 status,
-                message: Some(err_str),
+                message: friendly_msg,
                 latency_ms: None,
                 k8s_version: None,
                 detected_profile,
@@ -214,10 +240,11 @@ pub async fn get_available_clusters(
 ) -> Result<ApiResponse<Vec<ClusterContextSummary>>, String> {
     let clusters = state.session.get_available_clusters().await;
 
-    // Always dynamically load real clusters from kubeconfig
-    if let Ok(kube_config) = kube::config::Kubeconfig::read() {
+    // Always dynamically load real clusters from kubeconfig using resilient parser
+    if let Ok(kube_config) = crate::connector::aws_sso::read_kubeconfig_resilient() {
         let mut real_clusters = Vec::new();
         let current_ctx_name = kube_config.current_context.clone();
+        let registered_orgs = state.aws_sso.list_orgs().await;
 
         for ctx in kube_config.contexts.iter() {
             let env = if ctx.name.contains("prod") || ctx.name.contains("pdn") {
@@ -245,9 +272,36 @@ pub async fn get_available_clusters(
                 .find(|c| c.name == cluster_ref)
                 .and_then(|c| c.cluster.as_ref())
                 .and_then(|c| c.server.clone())
-                .unwrap_or(cluster_ref);
+                .unwrap_or(cluster_ref.clone());
 
-            let provider = if server_url.contains(".eks.amazonaws.com") {
+            let user_name = ctx.context.as_ref().map(|c| c.user.as_str());
+            let user_info = user_name.and_then(|uname| {
+                kube_config.auth_infos.iter().find(|u| u.name == uname)
+            });
+
+            let user_profile = user_info.and_then(|u| {
+                u.auth_info.as_ref().and_then(|ai| {
+                    ai.exec.as_ref().and_then(|exec| {
+                        exec.env.as_ref().and_then(|envs| {
+                            envs.iter()
+                                .find(|e| e.get("name").map(|n| n.as_str()) == Some("AWS_PROFILE"))
+                                .and_then(|e| e.get("value").cloned())
+                        })
+                    })
+                })
+            });
+
+            let arn_candidate = if ctx.name.starts_with("arn:aws:eks:") {
+                Some(ctx.name.as_str())
+            } else if cluster_ref.starts_with("arn:aws:eks:") {
+                Some(cluster_ref.as_str())
+            } else if user_name.map(|u| u.starts_with("arn:aws:eks:")).unwrap_or(false) {
+                user_name
+            } else {
+                None
+            };
+
+            let provider = if server_url.contains(".eks.amazonaws.com") || arn_candidate.is_some() {
                 "eks"
             } else if server_url.contains(".azmk8s.io") {
                 "aks"
@@ -260,9 +314,82 @@ pub async fn get_available_clusters(
                 .map(|c| c == &ctx.name)
                 .unwrap_or(false);
 
-            real_clusters.push(ClusterContextSummary {
+            // Extract metadata
+            let (region_opt, account_id_opt, cluster_name, is_arn_name) = if let Some(arn) = arn_candidate {
+                let parts: Vec<&str> = arn.split(':').collect();
+                let region = parts.get(3).copied().filter(|s| !s.is_empty()).unwrap_or("").to_string();
+                let account_id = parts.get(4).copied().filter(|s| !s.is_empty()).unwrap_or("").to_string();
+                let name = parts.get(5).and_then(|s| s.strip_prefix("cluster/")).unwrap_or(&ctx.name).to_string();
+                (Some(region), Some(account_id), name, ctx.name.starts_with("arn:aws:eks:"))
+            } else {
+                let mut reg = None;
+                let mut cl_name = ctx.name.clone();
+                if let Some(u) = user_info {
+                    if let Some(Some(exec)) = u.auth_info.as_ref().map(|ai| ai.exec.as_ref()) {
+                        if let Some(ref args) = exec.args {
+                            if let Some(pos) = args.iter().position(|a| a == "--region") {
+                                if let Some(r) = args.get(pos + 1) { reg = Some(r.clone()); }
+                            }
+                            if let Some(pos) = args.iter().position(|a| a == "--cluster-name") {
+                                if let Some(n) = args.get(pos + 1) { cl_name = n.clone(); }
+                            }
+                        }
+                    }
+                }
+                if reg.is_none() && server_url.contains(".eks.amazonaws.com") {
+                    let parts: Vec<&str> = server_url.split('.').collect();
+                    if parts.len() >= 4 {
+                        let idx = parts.len() - 3;
+                        reg = Some(parts[idx].to_string());
+                    }
+                }
+                (reg, None, cl_name, false)
+            };
+
+            let alias = if !is_arn_name {
+                ctx.name.clone()
+            } else {
+                cluster_name.clone()
+            };
+
+            // Match against registered AWS SSO orgs
+            let mut org_id_opt = None;
+            let mut matched_role = None;
+
+            if provider == "eks" {
+                for org in &registered_orgs {
+                    let matching_profiles = crate::connector::aws_sso::find_profiles_for_org(&org.start_url, &org.alias);
+                    let target_account_ids: std::collections::HashSet<String> = matching_profiles
+                        .iter()
+                        .filter_map(|p| p.account_id.clone())
+                        .collect();
+                    let target_profile_names: std::collections::HashSet<String> = matching_profiles
+                        .iter()
+                        .map(|p| p.profile_name.to_lowercase())
+                        .collect();
+
+                    let is_match = account_id_opt.as_ref().map(|acc| target_account_ids.contains(acc)).unwrap_or(false)
+                        || user_profile.as_ref().map(|prof| target_profile_names.contains(&prof.to_lowercase())).unwrap_or(false)
+                        || ctx.name.to_lowercase().contains(&org.alias.to_lowercase())
+                        || ctx.name.to_lowercase().contains(&org.id.to_lowercase());
+
+                    if is_match {
+                        org_id_opt = Some(org.id.clone());
+                        matched_role = matching_profiles.iter().find_map(|p| p.role_name.clone());
+                        break;
+                    }
+                }
+            }
+
+            let dedupe_core = (
+                account_id_opt.clone().unwrap_or_default(),
+                region_opt.clone().unwrap_or_default(),
+                cluster_name.clone(),
+            );
+
+            let summary = ClusterContextSummary {
                 id: format!("{}:{}", provider, ctx.name),
-                name: ctx.name.clone(),
+                name: cluster_name.clone(),
                 provider: provider.to_string(),
                 environment: env,
                 server_url,
@@ -272,7 +399,43 @@ pub async fn get_available_clusters(
                     .and_then(|c| c.namespace.clone())
                     .unwrap_or_else(|| "default".to_string()),
                 is_active: is_current,
-            });
+                alias: Some(alias),
+                context_name: Some(ctx.name.clone()),
+                org_id: org_id_opt,
+                account_id: account_id_opt,
+                account_name: user_profile,
+                role: matched_role,
+                region: region_opt,
+                k8s_version: None,
+            };
+
+            if is_arn_name {
+                if !real_clusters.iter().any(|d: &ClusterContextSummary| {
+                    d.account_id.as_deref().unwrap_or_default() == dedupe_core.0
+                        && d.region.as_deref().unwrap_or_default() == dedupe_core.1
+                        && d.name == dedupe_core.2
+                }) {
+                    real_clusters.push(summary);
+                }
+            } else {
+                if let Some(pos) = real_clusters.iter().position(|d: &ClusterContextSummary| {
+                    d.account_id.as_deref().unwrap_or_default() == dedupe_core.0
+                        && d.region.as_deref().unwrap_or_default() == dedupe_core.1
+                        && d.name == dedupe_core.2
+                        && d.context_name.as_deref().unwrap_or("").starts_with("arn:aws:eks:")
+                }) {
+                    real_clusters[pos] = summary;
+                } else if !real_clusters.iter().any(|d| d.id == summary.id) {
+                    real_clusters.push(summary);
+                }
+            }
+        }
+
+        // Retain any clusters already in session that weren't in kubeconfig
+        for c in clusters {
+            if !real_clusters.iter().any(|rc| rc.id == c.id || rc.name == c.name) {
+                real_clusters.push(c);
+            }
         }
 
         // If there is an active connector in session, mark that instead
@@ -307,7 +470,7 @@ pub async fn connect_cluster(
     let target = match target {
         Some(t) => Some(t),
         None => {
-            if let Ok(kube_config) = kube::config::Kubeconfig::read() {
+            if let Ok(kube_config) = crate::connector::aws_sso::read_kubeconfig_resilient() {
                 kube_config
                     .contexts
                     .into_iter()
@@ -351,6 +514,9 @@ pub async fn connect_cluster(
                                 .and_then(|c| c.namespace.clone())
                                 .unwrap_or_else(|| "default".to_string()),
                             is_active: false,
+                            alias: Some(ctx.name.clone()),
+                            context_name: Some(ctx.name.clone()),
+                            ..Default::default()
                         }
                     })
             } else {
@@ -362,18 +528,48 @@ pub async fn connect_cluster(
     if let Some(mut cluster) = target {
         cluster.is_active = true;
 
+        let ctx_to_use = cluster.context_name.as_deref().unwrap_or(&cluster.name);
         let kube_options = kube::config::KubeConfigOptions {
-            context: Some(cluster.name.clone()),
+            context: Some(ctx_to_use.to_string()),
             cluster: None,
             user: None,
         };
 
-        let client_config = match kube::Config::from_kubeconfig(&kube_options).await {
+        let mut client_config = kube::Config::from_kubeconfig(&kube_options).await;
+        if client_config.is_err() && cluster.provider == "eks" {
+            // Attempt to update-kubeconfig via aws cli if missing from kubeconfig
+            if let (Some(reg), Some(prof)) = (&cluster.region, &cluster.account_name) {
+                let alias_arg = cluster.alias.as_deref().unwrap_or(&cluster.name);
+                let _ = crate::connector::aws_sso::create_tokio_aws_command()
+                    .args([
+                        "eks",
+                        "update-kubeconfig",
+                        "--name",
+                        &cluster.name,
+                        "--region",
+                        reg,
+                        "--profile",
+                        prof,
+                        "--alias",
+                        alias_arg,
+                    ])
+                    .output()
+                    .await;
+                let retry_options = kube::config::KubeConfigOptions {
+                    context: Some(alias_arg.to_string()),
+                    cluster: None,
+                    user: None,
+                };
+                client_config = kube::Config::from_kubeconfig(&retry_options).await;
+            }
+        }
+
+        let client_config = match client_config {
             Ok(c) => c,
             Err(e) => {
                 return Ok(ApiResponse::err(format!(
                     "Could not load kubeconfig context '{}': {}",
-                    cluster.name, e
+                    ctx_to_use, e
                 )))
             }
         };
@@ -441,6 +637,40 @@ pub async fn get_active_cluster(
     state: State<'_, AppState>,
 ) -> Result<ApiResponse<Option<ClusterContextSummary>>, String> {
     Ok(ApiResponse::ok(state.session.get_active_summary().await))
+}
+
+#[tauri::command]
+pub async fn switch_cluster(
+    cluster_id: String,
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<Option<ClusterContextSummary>>, String> {
+    if let Some(summary) = state.session.switch_active_cluster(&cluster_id).await {
+        if let Ok(connector) = state.session.get_active_connector().await {
+            if let Ok(client) = connector.get_client().await {
+                state.watch_manager.stop_all().await;
+                state
+                    .watch_manager
+                    .start_pod_watch(app_handle, client)
+                    .await;
+            }
+        }
+        Ok(ApiResponse::ok(Some(summary)))
+    } else {
+        match connect_cluster(cluster_id, app_handle, state).await {
+            Ok(res) => Ok(ApiResponse::ok(res.data)),
+            Err(e) => Ok(ApiResponse::err(e)),
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_connected_clusters(
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<Vec<ClusterContextSummary>>, String> {
+    Ok(ApiResponse::ok(
+        state.session.get_connected_summaries().await,
+    ))
 }
 
 #[tauri::command]
@@ -1569,6 +1799,32 @@ pub async fn open_terminal_sso_login(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn check_aws_cli_installed() -> Result<ApiResponse<bool>, String> {
+    Ok(ApiResponse::ok(crate::connector::aws_sso::is_aws_cli_installed()))
+}
+
+#[tauri::command]
+pub async fn auto_configure_aws_sso(
+    alias: String,
+    start_url: String,
+    sso_region: String,
+    state: State<'_, AppState>,
+) -> Result<ApiResponse<Vec<String>>, String> {
+    let _ = crate::connector::aws_sso::ensure_sso_session_in_aws_config(&alias, &start_url, &sso_region);
+
+    let login_res = crate::connector::aws_sso::login_aws_sso_native(&start_url, &sso_region, &alias).await;
+    match login_res {
+        Ok(_) => {
+            let matching = crate::connector::aws_sso::find_profiles_for_org(&start_url, &alias);
+            let profile_names = matching.into_iter().map(|p| p.profile_name).collect();
+            let _ = state.aws_sso.discover_clusters_for_org(&alias).await;
+            Ok(ApiResponse::ok(profile_names))
+        }
+        Err(e) => Ok(ApiResponse::err(e)),
+    }
 }
 
 // --- Helm Release Lifecycle Management ---

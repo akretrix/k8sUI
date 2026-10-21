@@ -86,6 +86,7 @@ impl ClusterConnector for AksConnector {
             server_url: self.cluster_endpoint.clone(),
             current_namespace: "default".to_string(),
             is_active: true,
+            ..Default::default()
         })
     }
 

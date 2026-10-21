@@ -1,6 +1,7 @@
 import React from 'react';
 import { AppTab } from '../../types/tabs';
 import { X, Plus, MoreHorizontal, Layers, Trash2, Copy, ArrowRight } from 'lucide-react';
+import { cleanClusterName, getClusterMonogram } from '../../utils/clusterNames';
 
 interface TabBarProps {
   tabs: AppTab[];
@@ -88,16 +89,17 @@ export const TabBar: React.FC<TabBarProps> = ({
                 tab.namespaces.length > 0 ? `ns: ${tab.namespaces.join(', ')}` : 'all namespaces'
               })`}
             >
-              {/* Cluster Tag with Environment Badge */}
+              {/* Cluster Tag with Environment Badge & 4-Letter Monogram */}
               {tab.clusterName && (
                 <div className="flex items-center space-x-1">
                   <span
-                    className={`text-[9px] px-1 py-0.2 rounded font-mono font-semibold border ${envInfo.pillClass}`}
+                    className={`text-[9px] px-1 py-0.2 rounded font-mono font-bold border ${envInfo.pillClass}`}
+                    title={`${envInfo.label}: ${cleanClusterName(tab.clusterName)}`}
                   >
-                    {envInfo.label}
+                    {getClusterMonogram(tab.clusterName)}
                   </span>
-                  <span className="text-[11px] font-mono text-gray-300 truncate max-w-[100px]">
-                    {tab.clusterName}
+                  <span className="text-[11px] font-mono text-gray-300 truncate max-w-[90px]">
+                    {cleanClusterName(tab.clusterName)}
                   </span>
                   <span className="text-gray-600 text-xs">/</span>
                 </div>

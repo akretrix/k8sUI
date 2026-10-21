@@ -8,6 +8,8 @@ export interface ClusterContextSummary {
   server_url: string;
   current_namespace: string;
   is_active: boolean;
+  alias?: string;
+  context_name?: string;
   org_id?: string;
   account_id?: string;
   account_name?: string;

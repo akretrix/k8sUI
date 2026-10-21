@@ -89,6 +89,8 @@ impl ClusterConnector for EksConnector {
             server_url: self.cluster_endpoint.clone(),
             current_namespace: "default".to_string(),
             is_active: true,
+            region: Some(self.region.clone()),
+            ..Default::default()
         })
     }
 

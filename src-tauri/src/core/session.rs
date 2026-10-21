@@ -174,4 +174,25 @@ impl SessionManager {
         let read = self.current_namespace.read().await;
         read.clone()
     }
+
+    pub async fn switch_active_cluster(&self, cluster_id: &str) -> Option<ClusterContextSummary> {
+        let conn_map = self.connectors.read().await;
+        if let Some(conn) = conn_map.get(cluster_id) {
+            let mut active_conn = self.active_connector.write().await;
+            *active_conn = Some(conn.clone());
+
+            let sum_map = self.summaries.read().await;
+            if let Some(sum) = sum_map.get(cluster_id) {
+                let mut active_sum = self.active_summary.write().await;
+                *active_sum = Some(sum.clone());
+                return Some(sum.clone());
+            }
+        }
+        None
+    }
+
+    pub async fn get_connected_summaries(&self) -> Vec<ClusterContextSummary> {
+        let sum_map = self.summaries.read().await;
+        sum_map.values().cloned().collect()
+    }
 }

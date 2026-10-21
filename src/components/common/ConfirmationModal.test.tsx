@@ -16,7 +16,7 @@ describe('ConfirmationModal', () => {
         resourceKind="Deployment"
         resourceName="frontend-service"
         namespace="production"
-        clusterName="pdn-axonic"
+        clusterName="prod-cluster"
         isReadOnly={false}
       />
     );

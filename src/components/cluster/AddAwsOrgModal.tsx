@@ -13,6 +13,10 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
+  Search,
+  CheckSquare,
+  Square,
+  Globe,
 } from 'lucide-react';
 
 interface AddAwsOrgModalProps {
@@ -42,6 +46,9 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
   const [ssoRegion, setSsoRegion] = useState('all'); // all regions or specific
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [refreshingOrgId, setRefreshingOrgId] = useState<string | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState<string>('all');
+  const [clusterSearch, setClusterSearch] = useState<string>('');
+  const [checkedClusterIds, setCheckedClusterIds] = useState<Set<string>>(new Set());
 
   if (!isOpen) return null;
 
@@ -242,88 +249,264 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
                         </div>
 
                         {/* Discovered EKS Clusters Inside This Org */}
-                        <div className="p-3 bg-surface/40 space-y-2">
-                          <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
-                            Discovered EKS Clusters (Click to Connect & Inspect Namespaces/Pods):
-                          </div>
-
+                        <div className="p-3 bg-surface/40 space-y-3">
                           {orgClusters.length === 0 ? (
-                            <div className="text-xs text-gray-500 py-3 px-2">
-                              No clusters found in this organization. Check the Troubleshooting tab.
+                            <div className="text-xs text-gray-400 py-3 px-3 bg-surface-elevated/40 rounded-lg border border-border/60 space-y-2">
+                              <div>No clusters found or AWS SSO session token expired.</div>
+                              <div className="text-[11px] text-gray-400 font-mono">
+                                If your SSO token expired, authenticate in terminal and click <b>Sync Clusters</b>:
+                                <code className="block mt-1 text-orange-300 bg-black/40 px-2 py-1 rounded select-all">
+                                  aws sso login --sso-session {org.alias || '<session-name>'}
+                                </code>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="grid grid-cols-1 gap-2.5">
-                              {orgClusters.map((cluster) => {
-                                const isActive = cluster.id === activeCluster?.id;
+                          ) : (() => {
+                            const availableRegions = Array.from(
+                              new Set(orgClusters.map((c) => c.region).filter(Boolean) as string[])
+                            ).sort();
 
-                                return (
-                                  <div
-                                    key={cluster.id}
-                                    className={`p-3 rounded-lg border flex items-center justify-between transition-all ${
-                                      isActive
-                                        ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-md'
-                                        : 'bg-surface-elevated/70 border-border hover:border-gray-600 text-gray-200'
-                                    }`}
-                                  >
-                                    <div className="flex items-center space-x-3 min-w-0 pr-3">
-                                      <div className="p-2 rounded-lg bg-indigo-600/20 text-indigo-400 shrink-0">
-                                        <Layers className="w-4 h-4" />
-                                      </div>
-                                      <div className="min-w-0">
-                                        <div className="flex items-center space-x-2">
-                                          <span className="font-bold text-xs truncate">
-                                            {cluster.name}
-                                          </span>
-                                          {cluster.k8s_version && (
-                                            <span className="text-[10px] text-gray-400 font-mono">
-                                              v{cluster.k8s_version}
-                                            </span>
-                                          )}
-                                          <span
-                                            className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold uppercase ${getEnvBadgeClass(
-                                              cluster.environment
-                                            )}`}
-                                          >
-                                            {cluster.environment}
-                                          </span>
-                                          {isActive && (
-                                            <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
-                                              Active Cluster
-                                            </span>
-                                          )}
-                                        </div>
-                                        {cluster.account_name && (
-                                          <div className="text-[11px] text-orange-300 font-mono truncate mt-0.5">
-                                            Account: <b>{cluster.account_name}</b> ({cluster.account_id}) • {cluster.region}
-                                          </div>
-                                        )}
-                                        <div className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-                                          {cluster.server_url}
-                                        </div>
-                                        {cluster.role && (
-                                          <div className="text-[10px] text-gray-500 font-mono truncate mt-0.5">
-                                            Role: {cluster.role}
-                                          </div>
-                                        )}
-                                      </div>
+                            const filteredClusters = orgClusters.filter((c) => {
+                              if (selectedRegion !== 'all' && c.region !== selectedRegion) return false;
+                              if (clusterSearch.trim()) {
+                                const q = clusterSearch.toLowerCase();
+                                const match =
+                                  (c.alias && c.alias.toLowerCase().includes(q)) ||
+                                  c.name.toLowerCase().includes(q) ||
+                                  (c.region && c.region.toLowerCase().includes(q)) ||
+                                  (c.account_name && c.account_name.toLowerCase().includes(q)) ||
+                                  (c.account_id && c.account_id.toLowerCase().includes(q));
+                                if (!match) return false;
+                              }
+                              return true;
+                            });
+
+                            const toggleCheck = (id: string, e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              setCheckedClusterIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(id)) next.delete(id);
+                                else next.add(id);
+                                return next;
+                              });
+                            };
+
+                            const toggleCheckAll = () => {
+                              if (checkedClusterIds.size === filteredClusters.length && filteredClusters.length > 0) {
+                                setCheckedClusterIds(new Set());
+                              } else {
+                                setCheckedClusterIds(new Set(filteredClusters.map((c) => c.id)));
+                              }
+                            };
+
+                            return (
+                              <div className="space-y-3">
+                                {/* Search, Region Filter, and Check All Bar */}
+                                <div className="space-y-2">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="relative flex-1">
+                                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                                      <input
+                                        type="text"
+                                        value={clusterSearch}
+                                        onChange={(e) => setClusterSearch(e.target.value)}
+                                        placeholder="Filter by alias, cluster name, region, account…"
+                                        className="w-full bg-surface border border-border rounded-lg pl-8 pr-7 py-1 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-orange-500 transition-colors"
+                                      />
+                                      {clusterSearch && (
+                                        <button
+                                          onClick={() => setClusterSearch('')}
+                                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
                                     </div>
 
-                                    <button
-                                      onClick={() => handleConnectAndClose(cluster.id)}
-                                      className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all shrink-0 ${
-                                        isActive
-                                          ? 'bg-indigo-600 text-white shadow-sm'
-                                          : 'bg-surface border border-border text-gray-200 hover:text-white hover:bg-surface-hover hover:border-indigo-500'
-                                      }`}
-                                    >
-                                      <span>{isActive ? 'Currently Connected' : 'Connect & Inspect'}</span>
-                                      <ArrowRight className="w-3.5 h-3.5" />
-                                    </button>
+                                    {/* Check all & Selection info */}
+                                    <div className="flex items-center space-x-2 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={toggleCheckAll}
+                                        className="px-2.5 py-1 rounded-md bg-surface border border-border text-[11px] text-gray-300 hover:text-white hover:bg-surface-elevated flex items-center space-x-1.5 transition-colors"
+                                        title="Check or uncheck all filtered clusters"
+                                      >
+                                        {checkedClusterIds.size === filteredClusters.length && filteredClusters.length > 0 ? (
+                                          <CheckSquare className="w-3.5 h-3.5 text-orange-400" />
+                                        ) : (
+                                          <Square className="w-3.5 h-3.5 text-gray-500" />
+                                        )}
+                                        <span>
+                                          {checkedClusterIds.size > 0
+                                            ? `Checked (${checkedClusterIds.size}/${filteredClusters.length})`
+                                            : 'Check All'}
+                                        </span>
+                                      </button>
+                                    </div>
                                   </div>
-                                );
-                              })}
-                            </div>
-                          )}
+
+                                  {/* Multi-Region Filter Pills */}
+                                  {availableRegions.length > 0 && (
+                                    <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 text-[11px]">
+                                      <span className="text-gray-500 text-[10px] uppercase tracking-wider font-semibold mr-1">
+                                        Regions:
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedRegion('all')}
+                                        className={`px-2 py-0.5 rounded-full border text-[11px] transition-colors ${
+                                          selectedRegion === 'all'
+                                            ? 'bg-orange-600/30 border-orange-500 text-orange-200 font-semibold shadow-sm'
+                                            : 'bg-surface border-border text-gray-400 hover:text-gray-200'
+                                        }`}
+                                      >
+                                        All Regions ({orgClusters.length})
+                                      </button>
+                                      {availableRegions.map((reg) => {
+                                        const count = orgClusters.filter((c) => c.region === reg).length;
+                                        return (
+                                          <button
+                                            key={reg}
+                                            type="button"
+                                            onClick={() => setSelectedRegion(reg)}
+                                            className={`px-2 py-0.5 rounded-full border text-[11px] flex items-center space-x-1 transition-colors ${
+                                              selectedRegion === reg
+                                                ? 'bg-orange-600/30 border-orange-500 text-orange-200 font-semibold shadow-sm'
+                                                : 'bg-surface border-border text-gray-400 hover:text-gray-200'
+                                            }`}
+                                          >
+                                            <Globe className="w-2.5 h-2.5 opacity-70" />
+                                            <span>{reg}</span>
+                                            <span className="text-[10px] opacity-75 font-mono">({count})</span>
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Clusters List */}
+                                <div className="grid grid-cols-1 gap-2.5 max-h-[360px] overflow-y-auto pr-1">
+                                  {filteredClusters.length === 0 ? (
+                                    <div className="py-6 text-center text-xs text-gray-500 border border-dashed border-border rounded-lg">
+                                      No clusters match region "{selectedRegion}" or search "{clusterSearch}"
+                                    </div>
+                                  ) : (
+                                    filteredClusters.map((cluster) => {
+                                      const isActive = cluster.id === activeCluster?.id;
+                                      const isChecked = checkedClusterIds.has(cluster.id);
+
+                                      return (
+                                        <div
+                                          key={cluster.id}
+                                          className={`p-3 rounded-lg border flex items-center justify-between transition-all cursor-pointer ${
+                                            isActive
+                                              ? 'bg-indigo-950/40 border-indigo-500 text-white shadow-md'
+                                              : isChecked
+                                              ? 'bg-surface-elevated/90 border-orange-500/60 text-gray-200'
+                                              : 'bg-surface-elevated/70 border-border hover:border-gray-600 text-gray-200'
+                                          }`}
+                                          onClick={(e) => toggleCheck(cluster.id, e)}
+                                        >
+                                          <div className="flex items-center space-x-3 min-w-0 pr-3">
+                                            {/* Checkbox */}
+                                            <div
+                                              className="p-1 rounded text-gray-400 hover:text-white shrink-0"
+                                              onClick={(e) => toggleCheck(cluster.id, e)}
+                                            >
+                                              {isChecked ? (
+                                                <CheckSquare className="w-4 h-4 text-orange-400" />
+                                              ) : (
+                                                <Square className="w-4 h-4 text-gray-500 hover:text-gray-300" />
+                                              )}
+                                            </div>
+
+                                            <div className="p-2 rounded-lg bg-indigo-600/20 text-indigo-400 shrink-0">
+                                              <Layers className="w-4 h-4" />
+                                            </div>
+
+                                            <div className="min-w-0">
+                                              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                                {/* Cluster Alias as primary title */}
+                                                <span className="font-bold text-xs truncate text-white">
+                                                  {cluster.alias || cluster.name}
+                                                </span>
+
+                                                {/* If alias is different from real cluster name, show real cluster name badge */}
+                                                {cluster.alias && cluster.alias !== cluster.name && (
+                                                  <span className="text-[10px] text-gray-400 font-mono px-1.5 py-0.5 rounded bg-surface border border-border">
+                                                    Cluster: {cluster.name}
+                                                  </span>
+                                                )}
+
+                                                {/* Region badge */}
+                                                {cluster.region && (
+                                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-orange-950/60 border border-orange-800/80 text-orange-300 font-semibold flex items-center space-x-1">
+                                                    <Globe className="w-2.5 h-2.5" />
+                                                    <span>{cluster.region}</span>
+                                                  </span>
+                                                )}
+
+                                                {cluster.k8s_version && (
+                                                  <span className="text-[10px] text-gray-400 font-mono">
+                                                    v{cluster.k8s_version}
+                                                  </span>
+                                                )}
+
+                                                <span
+                                                  className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-semibold uppercase ${getEnvBadgeClass(
+                                                    cluster.environment
+                                                  )}`}
+                                                >
+                                                  {cluster.environment}
+                                                </span>
+
+                                                {isActive && (
+                                                  <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800">
+                                                    Active Cluster
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {cluster.account_name && (
+                                                <div className="text-[11px] text-orange-300 font-mono truncate mt-0.5">
+                                                  Account: <b>{cluster.account_name}</b> ({cluster.account_id})
+                                                </div>
+                                              )}
+
+                                              <div className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
+                                                {cluster.server_url}
+                                              </div>
+
+                                              {cluster.role && (
+                                                <div className="text-[10px] text-gray-500 font-mono truncate mt-0.5">
+                                                  Role: {cluster.role}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleConnectAndClose(cluster.id);
+                                            }}
+                                            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-all shrink-0 ${
+                                              isActive
+                                                ? 'bg-indigo-600 text-white shadow-sm'
+                                                : 'bg-surface border border-border text-gray-200 hover:text-white hover:bg-surface-hover hover:border-indigo-500'
+                                            }`}
+                                          >
+                                            <span>{isActive ? 'Currently Connected' : 'Connect & Inspect'}</span>
+                                            <ArrowRight className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     );
