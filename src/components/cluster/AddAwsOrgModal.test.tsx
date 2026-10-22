@@ -126,4 +126,34 @@ describe('AddAwsOrgModal Component (Functional Tests)', () => {
       'us-east-1'
     );
   });
+
+  it('displays Auto-Configure via SSO button when an org has 0 clusters', () => {
+    const emptyOrg: AwsSsoOrg = {
+      id: 'orgempty',
+      alias: 'Empty Org',
+      start_url: 'https://empty.awsapps.com/start',
+      sso_region: 'us-east-1',
+      status: 'authenticated',
+      accounts_count: 0,
+      clusters_count: 0,
+    };
+
+    render(
+      <AddAwsOrgModal
+        isOpen={true}
+        onClose={vi.fn()}
+        orgs={[emptyOrg]}
+        clusters={[]}
+        activeCluster={null}
+        onSelectCluster={vi.fn()}
+        onRegisterOrg={vi.fn()}
+        onRefreshOrg={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText(/No EKS clusters or configured AWS profiles found/i)).toBeInTheDocument();
+    expect(screen.getByText('Auto-Configure via SSO')).toBeInTheDocument();
+    expect(screen.getByText(/Copy: aws sso login --sso-session Empty Org/i)).toBeInTheDocument();
+  });
 });
+
