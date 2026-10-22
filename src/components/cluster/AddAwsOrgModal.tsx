@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AwsSsoOrg, ClusterContextSummary, EnvironmentTier } from '../../types/cluster';
+import { api } from '../../api/tauriClient';
 import {
   Server,
   ShieldCheck,
@@ -17,6 +18,9 @@ import {
   CheckSquare,
   Square,
   Globe,
+  Copy,
+  Check,
+  Terminal,
 } from 'lucide-react';
 
 interface AddAwsOrgModalProps {
@@ -49,6 +53,20 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
   const [selectedRegion, setSelectedRegion] = useState<string>('all');
   const [clusterSearch, setClusterSearch] = useState<string>('');
   const [checkedClusterIds, setCheckedClusterIds] = useState<Set<string>>(new Set());
+  const [isAwsCliInstalled, setIsAwsCliInstalled] = useState<boolean | null>(null);
+  const [copiedBrew, setCopiedBrew] = useState(false);
+  const [autoConfiguringOrgId, setAutoConfiguringOrgId] = useState<string | null>(null);
+  const [autoConfigStatus, setAutoConfigStatus] = useState<string | null>(null);
+  const [autoConfigureOnRegister, setAutoConfigureOnRegister] = useState(true);
+  const [copiedSsoCmdOrgId, setCopiedSsoCmdOrgId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      api.checkAwsCliInstalled()
+        .then(setIsAwsCliInstalled)
+        .catch(() => setIsAwsCliInstalled(true));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -80,14 +98,60 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
     }
 
     const orgAlias = alias.trim() || formattedUrl.replace('https://', '').split('.')[0];
+    const targetRegion = ssoRegion === 'all' ? 'us-east-1' : ssoRegion;
 
     setIsSubmitting(true);
     try {
-      await onRegisterOrg(orgAlias, formattedUrl, ssoRegion === 'all' ? 'us-east-1' : ssoRegion);
+      await onRegisterOrg(orgAlias, formattedUrl, targetRegion);
       setAlias('');
+
+      if (autoConfigureOnRegister) {
+        setAutoConfigStatus('Launching AWS SSO browser authorization...');
+        try {
+          await api.autoConfigureAwsSso({
+            alias: orgAlias,
+            startUrl: formattedUrl,
+            ssoRegion: targetRegion,
+          });
+          const newOrgId = formattedUrl.replace('https://', '').split('.')[0];
+          await onRefreshOrg(newOrgId);
+        } catch (ssoErr) {
+          console.warn('Auto-configure SSO after register:', ssoErr);
+        } finally {
+          setAutoConfigStatus(null);
+        }
+      }
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleAutoConfigureOrg = async (org: AwsSsoOrg) => {
+    setAutoConfiguringOrgId(org.id);
+    setAutoConfigStatus('Opening browser for AWS SSO authorization...');
+    try {
+      setAutoConfigStatus('Waiting for browser approval & writing profiles to ~/.aws/config...');
+      await api.autoConfigureAwsSso({
+        alias: org.alias,
+        startUrl: org.start_url,
+        ssoRegion: org.sso_region,
+      });
+      setAutoConfigStatus('Configured profiles! Scanning EKS clusters...');
+      await onRefreshOrg(org.id);
+      setAutoConfigStatus(null);
+    } catch (err: any) {
+      alert(`Auto-configure failed: ${err?.message || err}`);
+      setAutoConfigStatus(null);
+    } finally {
+      setAutoConfiguringOrgId(null);
+    }
+  };
+
+  const handleCopySsoCmd = (orgAlias: string, orgId: string) => {
+    const cmd = `aws sso login --sso-session ${orgAlias || '<session-name>'}`;
+    navigator.clipboard.writeText(cmd);
+    setCopiedSsoCmdOrgId(orgId);
+    setTimeout(() => setCopiedSsoCmdOrgId(null), 2500);
   };
 
   const handleRefresh = async (orgId: string) => {
@@ -168,6 +232,36 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
         {/* Tab 1: Auto-Discovery Form & Discovered Clusters List */}
         {activeTab === 'sso' && (
           <div className="overflow-y-auto flex-1 p-6 space-y-6">
+            {/* Missing AWS CLI Warning */}
+            {isAwsCliInstalled === false && (
+              <div className="p-3.5 rounded-lg bg-rose-950/40 border border-rose-800/60 text-rose-200 flex items-start space-x-3 text-xs">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-bold text-white">AWS CLI is not installed on this machine</div>
+                  <div className="text-[11px] text-rose-300/90 mt-0.5">
+                    AWS CLI (<code>aws</code>) is required for SSO authentication and EKS cluster communication. Please install it with Homebrew:
+                  </div>
+                  <div className="mt-2 flex items-center space-x-2">
+                    <code className="bg-black/50 px-2.5 py-1 rounded font-mono text-[11px] text-white border border-rose-900/50">
+                      brew install awscli
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText('brew install awscli');
+                        setCopiedBrew(true);
+                        setTimeout(() => setCopiedBrew(false), 2000);
+                      }}
+                      className="px-2.5 py-1 rounded bg-rose-900/40 hover:bg-rose-900/80 border border-rose-700/60 text-[11px] text-rose-200 flex items-center space-x-1 transition-colors"
+                    >
+                      {copiedBrew ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedBrew ? 'Copied!' : 'Copy Command'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Active Registered AWS SSO Organizations & Their Discovered Clusters */}
             <div>
               <h4 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-3">
@@ -251,13 +345,63 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
                         {/* Discovered EKS Clusters Inside This Org */}
                         <div className="p-3 bg-surface/40 space-y-3">
                           {orgClusters.length === 0 ? (
-                            <div className="text-xs text-gray-400 py-3 px-3 bg-surface-elevated/40 rounded-lg border border-border/60 space-y-2">
-                              <div>No clusters found or AWS SSO session token expired.</div>
-                              <div className="text-[11px] text-gray-400 font-mono">
-                                If your SSO token expired, authenticate in terminal and click <b>Sync Clusters</b>:
-                                <code className="block mt-1 text-orange-300 bg-black/40 px-2 py-1 rounded select-all">
-                                  aws sso login --sso-session {org.alias || '<session-name>'}
-                                </code>
+                            <div className="text-xs text-gray-400 py-3.5 px-4 bg-surface-elevated/50 rounded-lg border border-border/80 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <div className="font-semibold text-gray-200 flex items-center space-x-1.5">
+                                    <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                    <span>No EKS clusters or configured AWS profiles found</span>
+                                  </div>
+                                  <div className="text-[11px] text-gray-400 mt-1">
+                                    Authenticate via AWS IAM Identity Center to automatically generate your AWS CLI profiles and discover EKS clusters.
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAutoConfigureOrg(org)}
+                                  disabled={autoConfiguringOrgId === org.id}
+                                  className="px-3.5 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white font-semibold text-xs shadow-md shadow-orange-950 flex items-center space-x-2 shrink-0 transition-all disabled:opacity-50"
+                                >
+                                  {autoConfiguringOrgId === org.id ? (
+                                    <>
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                      <span>Authorizing...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="w-3.5 h-3.5" />
+                                      <span>Auto-Configure via SSO</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
+                              {autoConfiguringOrgId === org.id && autoConfigStatus && (
+                                <div className="p-2.5 rounded bg-orange-950/40 border border-orange-800/60 text-[11px] text-orange-200 flex items-center space-x-2">
+                                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-orange-400 shrink-0" />
+                                  <span>{autoConfigStatus}</span>
+                                </div>
+                              )}
+
+                              <div className="text-[11px] text-gray-500 pt-2 border-t border-border/40 flex items-center justify-between">
+                                <span className="font-mono">Or manual terminal login:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySsoCmd(org.alias, org.id)}
+                                  className="text-[10px] text-orange-400 hover:text-orange-300 font-mono flex items-center space-x-1"
+                                >
+                                  {copiedSsoCmdOrgId === org.id ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-400" />
+                                      <span className="text-emerald-400">Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      <span>Copy: aws sso login --sso-session {org.alias || '<session-name>'}</span>
+                                    </>
+                                  )}
+                                </button>
                               </div>
                             </div>
                           ) : (() => {
@@ -568,6 +712,26 @@ export const AddAwsOrgModal: React.FC<AddAwsOrgModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              <div className="flex items-center space-x-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="autoConfigureOnRegister"
+                  checked={autoConfigureOnRegister}
+                  onChange={(e) => setAutoConfigureOnRegister(e.target.checked)}
+                  className="rounded border-border bg-surface-elevated text-orange-500 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                />
+                <label htmlFor="autoConfigureOnRegister" className="text-xs text-gray-300 cursor-pointer select-none">
+                  Automatically authenticate in browser & configure profiles in <code className="text-orange-300 text-[10px]">~/.aws/config</code>
+                </label>
+              </div>
+
+              {autoConfigStatus && isSubmitting && (
+                <div className="p-2.5 rounded bg-orange-950/40 border border-orange-800/60 text-[11px] text-orange-200 flex items-center space-x-2">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-orange-400 shrink-0" />
+                  <span>{autoConfigStatus}</span>
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-2">
                 <div className="text-[11px] text-gray-400">

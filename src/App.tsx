@@ -32,7 +32,7 @@ import { usePodWatch } from './hooks/usePodWatch';
 import { checkForAppUpdates, UpdateInfo } from './utils/updateChecker';
 import { UpdateModal } from './components/common/UpdateModal';
 import { DiagnosticsModal } from './components/common/DiagnosticsModal';
-import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
+import { AlertTriangle, RefreshCw, WifiOff, KeyRound, ShieldCheck, Copy, Check, Sparkles } from 'lucide-react';
 export const App: React.FC = () => {
   const queryClient = useQueryClient();
   const { zoomLevel, showIndicator: showZoomIndicator, resetZoom } = useZoom();
@@ -955,6 +955,7 @@ export const App: React.FC = () => {
 
   const [isAwsSsoModalOpen, setIsAwsSsoModalOpen] = useState(false);
   const [copiedSsoCmd, setCopiedSsoCmd] = useState(false);
+  const [copiedBrewApp, setCopiedBrewApp] = useState(false);
 
   const handleAwsSsoBrowserLogin = () => {
     setIsAwsSsoModalOpen(true);
@@ -1007,13 +1008,39 @@ export const App: React.FC = () => {
             <div className="truncate">
               <b>{healthInfo.status === 'auth_expired' ? 'Authentication Expired:' : 'Cluster Unreachable:'}</b>{' '}
               <span className="font-mono text-xs opacity-90">
-                {healthInfo.status === 'auth_expired'
-                  ? `AWS SSO token or credentials for '${activeCluster?.name}' have expired.`
-                  : `Cannot reach cluster API for '${activeCluster?.name}'. Check if your VPN connection is active.`}
+                {healthInfo.message || (
+                  healthInfo.status === 'auth_expired'
+                    ? `AWS SSO token or credentials for '${activeCluster?.name}' have expired.`
+                    : `Cannot reach cluster API for '${activeCluster?.name}'. Check if your VPN connection is active.`
+                )}
               </span>
             </div>
           </div>
           <div className="flex items-center space-x-2 shrink-0">
+            {healthInfo.message?.includes("AWS CLI ('aws') is not installed") && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText('brew install awscli');
+                  setCopiedBrewApp(true);
+                  setTimeout(() => setCopiedBrewApp(false), 2000);
+                }}
+                className="px-2.5 py-1 bg-rose-900/80 hover:bg-rose-900 border border-rose-600/80 text-rose-200 hover:text-white rounded text-xs font-mono font-medium transition-colors flex items-center space-x-1"
+                title="Copy 'brew install awscli' to clipboard"
+              >
+                {copiedBrewApp ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-rose-300" />}
+                <span>{copiedBrewApp ? 'Copied!' : 'Copy brew install'}</span>
+              </button>
+            )}
+            {healthInfo.message?.includes("Profile Missing") && (
+              <button
+                onClick={() => setIsAddAwsOrgOpen(true)}
+                className="px-3 py-1 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded text-xs shadow flex items-center space-x-1.5 transition-colors"
+                title="Configure missing AWS SSO profiles"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Configure AWS SSO</span>
+              </button>
+            )}
             {healthInfo.status === 'auth_expired' && (
               <div className="flex items-center space-x-1.5">
                 <button

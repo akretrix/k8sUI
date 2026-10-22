@@ -602,7 +602,7 @@ dependencies = [
  "hyper-util",
  "pin-project-lite",
  "rustls 0.21.12",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-native-certs",
  "rustls-pki-types",
  "tokio",
@@ -1608,7 +1608,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1837,7 +1837,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2745,7 +2745,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2817,7 +2817,7 @@ dependencies = [
  "hyper 1.11.1",
  "hyper-util",
  "log",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-native-certs",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -3355,7 +3355,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "rusqlite",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -3434,7 +3434,7 @@ dependencies = [
  "kube-core",
  "pem",
  "rand 0.8.8",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pemfile",
  "secrecy",
  "serde",
@@ -3736,7 +3736,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.20",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3804,7 +3804,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3922,7 +3922,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.21.7",
  "chrono",
  "getrandom 0.2.17",
  "http 1.5.0",
@@ -4223,7 +4223,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -4688,7 +4688,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "socket2 0.6.5",
  "thiserror 2.0.20",
  "tokio",
@@ -4709,7 +4709,7 @@ dependencies = [
  "rand_pcg",
  "ring",
  "rustc-hash",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.20",
@@ -4729,7 +4729,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.5",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4954,7 +4954,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -5123,7 +5123,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5140,16 +5140,16 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.15",
+ "rustls-webpki 0.103.16",
  "subtle",
  "zeroize",
 ]
@@ -5197,9 +5197,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5764,22 +5764,12 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "socket2"
 version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6324,7 +6314,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6497,7 +6487,7 @@ version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
- "rustls 0.23.45",
+ "rustls 0.23.46",
  "tokio",
 ]
 
@@ -6821,7 +6811,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.20",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6933,7 +6923,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset 0.9.1",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7311,9 +7301,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.9"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -7376,7 +7366,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

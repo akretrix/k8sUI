@@ -100,12 +100,23 @@ case "$OS" in
       echo -e "   • Xcode CLI:    ${YELLOW}Missing${NC} (Run: xcode-select --install)"
     fi
     echo -e "   • WebKit:       ${GREEN}Native macOS WebKit framework available${NC}"
+    if command -v aws >/dev/null 2>&1 || [ -f "/opt/homebrew/bin/aws" ] || [ -f "/usr/local/bin/aws" ]; then
+      AWS_BIN="$(command -v aws 2>/dev/null || ([ -f "/opt/homebrew/bin/aws" ] && echo "/opt/homebrew/bin/aws") || echo "/usr/local/bin/aws")"
+      echo -e "   • AWS CLI:      ${GREEN}Installed${NC} (${AWS_BIN})"
+    else
+      echo -e "   • AWS CLI:      ${YELLOW}Missing${NC} (Run: brew install awscli for AWS SSO & EKS support)"
+    fi
     ;;
   Linux)
     if dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || rpm -q webkit2gtk4.1-devel >/dev/null 2>&1; then
       echo -e "   • WebKitGTK:    ${GREEN}Installed${NC}"
     else
       echo -e "   • WebKitGTK:    ${YELLOW}May need: sudo apt install libwebkit2gtk-4.1-dev libappindicator3-dev${NC}"
+    fi
+    if command -v aws >/dev/null 2>&1 || [ -f "/usr/local/bin/aws" ]; then
+      echo -e "   • AWS CLI:      ${GREEN}Installed${NC}"
+    else
+      echo -e "   • AWS CLI:      ${YELLOW}Optional: Install AWS CLI for AWS SSO & EKS discovery${NC}"
     fi
     ;;
   MINGW*|MSYS*|CYGWIN*)
