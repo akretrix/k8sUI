@@ -90,7 +90,9 @@ fi
 
 # 7. Frontend TypeScript & Static Typecheck
 step "7/8 Verifying TypeScript compilation (tsc --noEmit)"
-if pnpm exec tsc --noEmit; then
+if [ -f "./node_modules/.bin/tsc" ]; then
+  ./node_modules/.bin/tsc --noEmit && pass "TypeScript compilation clean with zero errors" || fail "TypeScript compiler found type errors"
+elif pnpm exec tsc --noEmit; then
   pass "TypeScript compilation clean with zero errors"
 else
   fail "TypeScript compiler found type errors"

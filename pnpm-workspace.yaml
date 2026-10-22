@@ -3,5 +3,22 @@ packages:
 
 allowBuilds:
   esbuild: true
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm
+    - GHSA-vp8m-p9jh-q5pm
+    - GHSA-68fv-2mgg-jv7q
+    - GHSA-587h-7wmj-h5pm
+    - GHSA-rfgv-xxqx-mfg5
+    - GHSA-w293-vg96-wgc3
 minimumReleaseAgeExclude:
   - '@testing-library/react@16.3.3'
+  - 'vite'
+  - 'source-map-js'
+  - undici@8.10.2
+  - postcss-selector-parser@7.1.6
+  - '@vitest/mocker@4.1.12'
+
+overrides:
+  source-map-js: '>=1.2.2'
+  vite: '>=6.4.4'

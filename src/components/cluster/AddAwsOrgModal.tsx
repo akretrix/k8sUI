@@ -20,7 +20,6 @@ import {
   Globe,
   Copy,
   Check,
-  Terminal,
 } from 'lucide-react';
 
 interface AddAwsOrgModalProps {
