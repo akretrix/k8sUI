@@ -38,11 +38,14 @@ concurrency:
 
 jobs:
   # =========================================================================
-  # 0. Manual Tag & Version Bump (triggered on workflow_dispatch with bump)
+  # 0. Auto-Release Bump & Tag (runs on push to main or workflow_dispatch)
   # =========================================================================
   tag-new-version:
     name: Bump Versions & Tag Release
-    if: github.event_name == 'workflow_dispatch' && (inputs.version_type != 'none' || inputs.custom_version != '')
+    needs: [rust-security, frontend-security, secret-scan]
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release):')) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.version_type != 'none' || inputs.custom_version != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -77,6 +80,7 @@ jobs:
         run: |
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "Current version: $CURRENT_VERSION"
+          BUMP_TYPE="${{ inputs.version_type || 'patch' }}"
 
           if [ -n "${{ inputs.custom_version }}" ]; then
             NEW_VERSION="${{ inputs.custom_version }}"
@@ -87,7 +91,7 @@ jobs:
               fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
             "
           else
-            pnpm version ${{ inputs.version_type }} --no-git-tag-version
+            pnpm version "$BUMP_TYPE" --no-git-tag-version
             NEW_VERSION=$(node -p "require('./package.json').version")
           fi
 
@@ -263,7 +267,8 @@ jobs:
       needs.secret-scan.result == 'success' &&
       (
         startsWith(github.ref, 'refs/tags/v') ||
-        (github.event_name == 'workflow_dispatch' && (inputs.tag_name != '' || needs.tag-new-version.result == 'success'))
+        needs.tag-new-version.result == 'success' ||
+        (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
       )
     needs: [tag-new-version, rust-security, frontend-security, secret-scan]
     runs-on: ${{ matrix.platform.os }}
@@ -449,6 +454,7 @@ jobs:
           name: 'k8sUI ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref_name }}'
           draft: false
           prerelease: false
+          make_latest: true
           generate_release_notes: true
           files: |
             release-artifacts/**/*.dmg
