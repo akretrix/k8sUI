@@ -930,6 +930,7 @@ export const App: React.FC = () => {
   };
 
   const handleApproveAiProposal = (proposal: PendingAiProposal) => {
+    if (isReadOnly) return;
     if (proposal.tool_call.tool === 'scale_deployment') {
       const p = proposal.tool_call.params;
       scaleMutation.mutate({
@@ -1515,6 +1516,7 @@ export const App: React.FC = () => {
 
       <AiCopilotDrawer
         isOpen={isAiDrawerOpen}
+        isReadOnly={isReadOnly}
         onClose={() => setIsAiDrawerOpen(false)}
         onApproveProposal={handleApproveAiProposal}
         onRejectProposal={handleRejectAiProposal}

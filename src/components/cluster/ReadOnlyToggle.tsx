@@ -36,7 +36,7 @@ export const ReadOnlyToggle: React.FC<ReadOnlyToggleProps> = ({
         className={`flex items-center space-x-2 px-3 py-1.5 rounded-md border text-xs font-mono font-medium transition-all ${
           isReadOnly
             ? 'border-emerald-600/40 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-900/40'
-            : 'border-red-500 bg-red-950/60 text-red-300 hover:bg-red-900/70 animate-pulse'
+            : 'border-red-500/80 bg-red-950/60 text-red-200 hover:bg-red-900/70 shadow-sm shadow-red-950/50'
         }`}
         title={isReadOnly ? 'Read-Only Mode Active (Safe)' : 'Write Mode Active (Mutating actions enabled)'}
         aria-label={isReadOnly ? 'Read-Only Mode Active' : 'Write Mode Active'}
@@ -48,6 +48,10 @@ export const ReadOnlyToggle: React.FC<ReadOnlyToggleProps> = ({
           </>
         ) : (
           <>
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+            </span>
             <Unlock className="w-3.5 h-3.5 text-red-400" />
             <span className="font-bold">WRITE-MODE</span>
           </>

@@ -26,6 +26,7 @@ export interface ConfirmationModalProps {
   resourceName: string;
   namespace?: string;
   clusterName?: string;
+  environment?: string;
   isReadOnly?: boolean;
   batchItems?: BatchTargetItem[];
 }
@@ -39,6 +40,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   resourceName,
   namespace,
   clusterName,
+  environment,
   isReadOnly = false,
   batchItems,
 }) => {
@@ -306,13 +308,15 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                 <label htmlFor="confirm-name" className="text-gray-300 font-medium select-text">
                   Type <span className="font-mono text-red-400 font-bold select-all">{expectedConfirmationText}</span> to confirm:
                 </label>
-                <button
-                  type="button"
-                  onClick={handleAutoFill}
-                  className="text-[11px] text-brand-400 hover:text-brand-300 hover:underline flex items-center space-x-1"
-                >
-                  <span>Auto-fill</span>
-                </button>
+                {environment !== 'Production' && !(clusterName || '').toLowerCase().includes('prod') && (
+                  <button
+                    type="button"
+                    onClick={handleAutoFill}
+                    className="text-[11px] text-brand-400 hover:text-brand-300 hover:underline flex items-center space-x-1"
+                  >
+                    <span>Auto-fill</span>
+                  </button>
+                )}
               </div>
               <input
                 id="confirm-name"

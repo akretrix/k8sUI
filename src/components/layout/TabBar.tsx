@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppTab } from '../../types/tabs';
-import { X, Plus, MoreHorizontal, Layers, Trash2, Copy, ArrowRight } from 'lucide-react';
+import { X, Plus, MoreHorizontal, Layers, Box, Ship, Trash2, Copy, ArrowRight } from 'lucide-react';
 import { cleanClusterName, getClusterMonogram } from '../../utils/clusterNames';
 
 interface TabBarProps {
@@ -27,7 +27,14 @@ export const TabBar: React.FC<TabBarProps> = ({
   onNewTab,
 }) => {
   const [showMenu, setShowMenu] = React.useState(false);
-  const [contextMenuTabId, setContextMenuTabId] = React.useState<string | null>(null);
+  const [contextMenu, setContextMenu] = React.useState<{ tabId: string; x: number; y: number } | null>(null);
+
+  const getTabIcon = (resource: string) => {
+    const r = resource.toLowerCase();
+    if (r === 'pods') return Box;
+    if (r.includes('helm')) return Ship;
+    return Layers;
+  };
 
   const getEnvBadge = (env?: string) => {
     const lower = env?.toLowerCase() || '';
@@ -71,7 +78,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               onClick={() => onSelectTab(tab.id)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                setContextMenuTabId(tab.id);
+                setContextMenu({ tabId: tab.id, x: e.clientX, y: e.clientY });
               }}
               onAuxClick={(e) => {
                 if (e.button === 1) {
@@ -107,9 +114,14 @@ export const TabBar: React.FC<TabBarProps> = ({
 
               {/* Resource Title */}
               <div className="flex items-center space-x-1">
-                <Layers
-                  className={`w-3 h-3 ${isActive ? 'text-cyan-400' : 'text-gray-500'}`}
-                />
+                {(() => {
+                  const TabIcon = getTabIcon(tab.resource);
+                  return (
+                    <TabIcon
+                      className={`w-3 h-3 ${isActive ? 'text-cyan-400' : 'text-gray-500'}`}
+                    />
+                  );
+                })()}
                 <span className="font-semibold text-xs text-white truncate max-w-[110px]">
                   {tab.title}
                 </span>
@@ -220,17 +232,20 @@ export const TabBar: React.FC<TabBarProps> = ({
         )}
 
         {/* Tab Context Menu */}
-        {contextMenuTabId && (
+        {contextMenu && (
           <>
-            <div className="fixed inset-0 z-30" onClick={() => setContextMenuTabId(null)} />
-            <div className="absolute right-0 mt-1 w-48 rounded-xl bg-[#0E131F] border border-gray-800 shadow-2xl z-40 py-1.5 text-xs">
+            <div className="fixed inset-0 z-30" onClick={() => setContextMenu(null)} />
+            <div
+              className="fixed w-48 rounded-xl bg-surface-elevated border border-border shadow-2xl z-40 py-1.5 text-xs"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
               {onDuplicateTab && (
                 <button
                   onClick={() => {
-                    onDuplicateTab(contextMenuTabId);
-                    setContextMenuTabId(null);
+                    onDuplicateTab(contextMenu.tabId);
+                    setContextMenu(null);
                   }}
-                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white flex items-center space-x-2"
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-hover hover:text-white flex items-center space-x-2"
                 >
                   <Copy className="w-3.5 h-3.5 text-gray-400" />
                   <span>Duplicate Tab</span>
@@ -238,22 +253,22 @@ export const TabBar: React.FC<TabBarProps> = ({
               )}
               <button
                 onClick={() => {
-                  onCloseOtherTabs(contextMenuTabId);
-                  setContextMenuTabId(null);
+                  onCloseOtherTabs(contextMenu.tabId);
+                  setContextMenu(null);
                 }}
                 disabled={tabs.length <= 1}
-                className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
+                className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-hover hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <span>Close Other Tabs</span>
               </button>
               {onCloseTabsToRight && (
                 <button
                   onClick={() => {
-                    onCloseTabsToRight(contextMenuTabId);
-                    setContextMenuTabId(null);
+                    onCloseTabsToRight(contextMenu.tabId);
+                    setContextMenu(null);
                   }}
-                  disabled={tabs.findIndex((t) => t.id === contextMenuTabId) === tabs.length - 1}
-                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-gray-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
+                  disabled={tabs.findIndex((t) => t.id === contextMenu.tabId) === tabs.length - 1}
+                  className="w-full text-left px-3 py-1.5 text-gray-300 hover:bg-surface-hover hover:text-white disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-2"
                 >
                   <ArrowRight className="w-3.5 h-3.5 text-gray-400" />
                   <span>Close Tabs to the Right</span>
@@ -261,11 +276,11 @@ export const TabBar: React.FC<TabBarProps> = ({
               )}
               <button
                 onClick={(e) => {
-                  onCloseTab(contextMenuTabId, e);
-                  setContextMenuTabId(null);
+                  onCloseTab(contextMenu.tabId, e);
+                  setContextMenu(null);
                 }}
                 disabled={tabs.length <= 1}
-                className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-950/40 hover:text-red-300 flex items-center space-x-2 border-t border-gray-800/80 mt-1 pt-1.5 disabled:opacity-40"
+                className="w-full text-left px-3 py-1.5 text-red-400 hover:bg-red-950/40 hover:text-red-300 flex items-center space-x-2 border-t border-border mt-1 pt-1.5 disabled:opacity-40"
               >
                 <X className="w-3.5 h-3.5" />
                 <span>Close This Tab</span>

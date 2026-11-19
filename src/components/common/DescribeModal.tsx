@@ -5032,6 +5032,12 @@ export const DescribeModal: React.FC<DescribeModalProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center space-x-2">
+                        <span
+                          className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-950/60 text-amber-300 border border-amber-800/70"
+                          title="Sparkline trends are simulated when live metrics-server history is unavailable"
+                        >
+                          Simulated Telemetry
+                        </span>
                         <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold font-mono border ${
                           (status?.qosClass || workloadResources.qosClass) === 'Guaranteed'
                             ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800'

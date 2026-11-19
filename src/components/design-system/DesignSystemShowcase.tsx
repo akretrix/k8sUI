@@ -62,8 +62,8 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({
   const canvasColors = [
     { name: 'Canvas Base', hex: '#0B0F17', desc: 'Deep Obsidian Background' },
     { name: 'Surface Card', hex: '#111827', desc: 'Slate 900 Card Surface' },
-    { name: 'Surface Elevated', hex: '#1F2937', desc: 'Slate 800 Toolbar / Modals' },
-    { name: 'Border Subdued', hex: '#1F2937', desc: 'Subtle separator' },
+    { name: 'Surface Elevated', hex: '#182132', desc: 'Elevated Toolbar / Modals' },
+    { name: 'Border Subdued', hex: '#232F46', desc: 'Crisp hairline separator' },
     { name: 'Text Primary', hex: '#F9FAFB', desc: 'Main UI typography' },
     { name: 'Text Muted', hex: '#9CA3AF', desc: 'Secondary labels / metadata' },
   ];
@@ -76,15 +76,15 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({
   ];
 
   const rawSvgSymbol = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
-  <polygon points="256,92 398,174 398,338 256,420 114,338 114,174" stroke="#326CE5" stroke-width="3" stroke-dasharray="10 8"/>
-  <g stroke="#326CE5" stroke-width="2.5"><line x1="256" y1="92" x2="256" y2="150"/><line x1="398" y1="174" x2="348" y2="203"/><line x1="398" y1="338" x2="348" y2="309"/><line x1="256" y1="420" x2="256" y2="362"/><line x1="114" y1="338" x2="164" y2="309"/><line x1="114" y1="174" x2="164" y2="203"/></g>
-  <polygon points="256,150 348,203 256,256 164,203" fill="#60A5FA" stroke="#93C5FD" stroke-width="2.5"/>
-  <polygon points="164,203 256,256 256,362 164,309" fill="#326CE5" stroke="#326CE5" stroke-width="2.5"/>
-  <polygon points="256,256 348,203 348,309 256,362" fill="#2557C7" stroke="#2557C7" stroke-width="2.5"/>
-  <circle cx="398" cy="174" r="16" fill="#0B0F17" stroke="#10B981" stroke-width="4"/>
-  <circle cx="398" cy="174" r="7" fill="#34D399"/>
-  <circle cx="256" cy="203" r="16" fill="#326CE5"/>
-  <circle cx="256" cy="203" r="6" fill="#FFFFFF"/>
+  <polygon points="256,64 422,160 422,352 256,448 90,352 90,160" fill="#326CE5" fill-opacity="0.05" stroke="#326CE5" stroke-opacity="0.65" stroke-width="10" stroke-linejoin="round"/>
+  <g stroke="#326CE5" stroke-width="8" stroke-opacity="0.5" stroke-linecap="round"><line x1="256" y1="68" x2="256" y2="136"/><line x1="94" y1="350" x2="152" y2="316"/><line x1="418" y1="350" x2="360" y2="316"/></g>
+  <polygon points="256,136 360,196 256,256 152,196" fill="#60A5FA"/>
+  <polygon points="152,196 256,256 256,376 152,316" fill="#2557C7"/>
+  <polygon points="256,256 360,196 360,316 256,376" fill="#143175"/>
+  <path d="M152,196 L256,256 L360,196 M256,256 L256,376" stroke="#E0F2FE" stroke-opacity="0.7" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="422" cy="160" r="34" fill="#0B0F17"/>
+  <circle cx="422" cy="160" r="24" fill="#10B981" fill-opacity="0.2" stroke="#10B981" stroke-width="6"/>
+  <circle cx="422" cy="160" r="11" fill="#34D399"/>
 </svg>`;
 
   const cssTokensSnippet = `:root {
@@ -97,9 +97,10 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({
 
   /* Neutral Canvas */
   --canvas-base: #0B0F17;
+  --canvas-rail: #070A10;
   --canvas-surface: #111827;
-  --canvas-elevated: #1F2937;
-  --border-subdued: #1F2937;
+  --canvas-elevated: #182132;
+  --border-subdued: #232F46;
   --text-primary: #F9FAFB;
   --text-muted: #9CA3AF;
 

@@ -23,23 +23,24 @@ export default {
         },
         canvas: {
           base: '#0B0F17', // Deep Obsidian
+          rail: '#070A10', // Deep Rail
           surface: '#111827', // Slate 900
           card: '#111827',
-          elevated: '#1F2937', // Slate 800
-          subdued: '#1F2937',
-          border: '#1F2937',
+          elevated: '#182132', // Crisp elevated panel
+          subdued: '#232F46', // Hairline separator
+          border: '#232F46',
         },
         background: '#0B0F17',
         surface: {
           DEFAULT: '#111827',
-          elevated: '#1F2937',
-          hover: '#374151',
-          subdued: '#1F2937',
+          elevated: '#182132',
+          hover: '#26334D',
+          subdued: '#1E293B',
         },
         border: {
-          DEFAULT: '#1F2937',
-          subtle: '#1F2937',
-          strong: '#374151',
+          DEFAULT: '#232F46',
+          subtle: '#1C2536',
+          strong: '#334155',
         },
         semantic: {
           healthy: '#10B981',

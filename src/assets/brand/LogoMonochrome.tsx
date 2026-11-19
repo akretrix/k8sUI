@@ -23,50 +23,33 @@ export const LogoMonochrome: React.FC<LogoMonochromeProps> = ({
     >
       {/* Outer Hexagon */}
       <polygon
-        points="256,92 398,174 398,338 256,420 114,338 114,174"
-        strokeWidth="12"
-        strokeDasharray="14 10"
+        points="256,64 422,160 422,352 256,448 90,352 90,160"
+        strokeWidth="16"
+        strokeLinejoin="round"
+      />
+
+      {/* 3-Axis Structural Spokes */}
+      <g strokeWidth="14" strokeLinecap="round">
+        <line x1="256" y1="68" x2="256" y2="136" />
+        <line x1="94" y1="350" x2="152" y2="316" />
+        <line x1="418" y1="350" x2="360" y2="316" />
+      </g>
+
+      {/* Isometric Cube Contour & Y-Bevel */}
+      <polygon
+        points="256,136 360,196 360,316 256,376 152,316 152,196"
+        strokeWidth="16"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M152,196 L256,256 L360,196 M256,256 L256,376"
+        strokeWidth="14"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
 
-      {/* Internal Spokes */}
-      <g strokeWidth="10" strokeLinecap="round">
-        <line x1="256" y1="92" x2="256" y2="150" />
-        <line x1="398" y1="174" x2="348" y2="203" />
-        <line x1="398" y1="338" x2="348" y2="309" />
-        <line x1="256" y1="420" x2="256" y2="362" />
-        <line x1="114" y1="338" x2="164" y2="309" />
-        <line x1="114" y1="174" x2="164" y2="203" />
-      </g>
-
-      {/* Isometric Cube Faces */}
-      <polygon
-        points="256,150 348,203 256,256 164,203"
-        strokeWidth="12"
-        strokeLinejoin="round"
-      />
-      <polygon
-        points="164,203 256,256 256,362 164,309"
-        strokeWidth="12"
-        strokeLinejoin="round"
-      />
-      <polygon
-        points="256,256 348,203 348,309 256,362"
-        strokeWidth="12"
-        strokeLinejoin="round"
-      />
-
-      {/* Vertex Nodes */}
-      <circle cx="256" cy="92" r="16" fill={color} />
-      <circle cx="398" cy="174" r="18" fill={color} />
-      <circle cx="398" cy="338" r="16" fill={color} />
-      <circle cx="256" cy="420" r="16" fill={color} />
-      <circle cx="114" cy="338" r="16" fill={color} />
-      <circle cx="114" cy="174" r="16" fill={color} />
-
-      {/* Center Heart Dot */}
-      <circle cx="256" cy="203" r="14" fill={color} />
+      {/* Top-Right Status Node */}
+      <circle cx="422" cy="160" r="22" fill={color} />
     </svg>
   );
 };

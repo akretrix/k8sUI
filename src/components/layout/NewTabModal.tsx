@@ -19,6 +19,7 @@ import {
   Compass,
   HardDrive,
   RefreshCw,
+  Ship,
 } from 'lucide-react';
 
 interface NewTabModalProps {
@@ -52,7 +53,7 @@ const COMMON_RESOURCES: ResourceCategory[] = [
   { id: 'daemonsets', name: 'DaemonSets', icon: Shield, description: 'Node-level agent workloads' },
   { id: 'jobs', name: 'Jobs', icon: RefreshCw, description: 'Batch tasks & one-off executions' },
   { id: 'cronjobs', name: 'CronJobs', icon: Clock, description: 'Scheduled tasks & jobs' },
-  { id: 'helm-releases', name: 'Helm Releases', icon: Box, description: 'Chart application lifecycle' },
+  { id: 'helm-releases', name: 'Helm Releases', icon: Ship, description: 'Chart application lifecycle' },
 ];
 
 export const NewTabModal: React.FC<NewTabModalProps> = ({

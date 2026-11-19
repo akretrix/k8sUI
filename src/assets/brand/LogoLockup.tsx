@@ -30,7 +30,7 @@ export const LogoLockup: React.FC<LogoLockupProps> = ({
               isDark ? 'text-white' : 'text-gray-900'
             }`}
           >
-            K8S<span className="text-[#326CE5]">UI</span>
+            k8s<span className="text-brand-500">UI</span>
           </span>
         </div>
         {showSubtitle && (

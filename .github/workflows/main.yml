@@ -47,6 +47,9 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    outputs:
+      new_version: ${{ steps.versioning.outputs.NEW_VERSION }}
+      tag_name: ${{ steps.versioning.outputs.TAG_NAME }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -77,6 +80,12 @@ jobs:
 
           if [ -n "${{ inputs.custom_version }}" ]; then
             NEW_VERSION="${{ inputs.custom_version }}"
+            node -e "
+              const fs = require('fs');
+              const pkg = JSON.parse(fs.readFileSync('package.json'));
+              pkg.version = '$NEW_VERSION';
+              fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            "
           else
             pnpm version ${{ inputs.version_type }} --no-git-tag-version
             NEW_VERSION=$(node -p "require('./package.json').version")
@@ -117,7 +126,7 @@ jobs:
           NEW_TAG="${{ steps.versioning.outputs.TAG_NAME }}"
           git tag -s -a "$NEW_TAG" -m "Release $NEW_TAG" || git tag -a "$NEW_TAG" -m "Release $NEW_TAG"
           git push origin "$NEW_TAG"
-          echo "Successfully pushed tag $NEW_TAG. Tag release pipeline triggered."
+          echo "Successfully pushed tag $NEW_TAG. Proceeding with multiplatform release build."
 
   # =========================================================================
   # 1. CI / PR Verification & Security Gates
@@ -247,8 +256,16 @@ jobs:
   # =========================================================================
   build-and-package:
     name: Build (${{ matrix.platform.name }})
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.tag_name != '')
-    needs: [rust-security, frontend-security, secret-scan]
+    if: |
+      always() &&
+      needs.rust-security.result == 'success' &&
+      needs.frontend-security.result == 'success' &&
+      needs.secret-scan.result == 'success' &&
+      (
+        startsWith(github.ref, 'refs/tags/v') ||
+        (github.event_name == 'workflow_dispatch' && (inputs.tag_name != '' || needs.tag-new-version.result == 'success'))
+      )
+    needs: [tag-new-version, rust-security, frontend-security, secret-scan]
     runs-on: ${{ matrix.platform.os }}
     timeout-minutes: 45
     permissions:
@@ -275,6 +292,8 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref }}
 
       - name: Install System Dependencies (Linux)
         if: matrix.platform.os == 'ubuntu-22.04'
@@ -312,8 +331,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name || inputs.tag_name }}
-          releaseName: 'k8sUI ${{ github.ref_name || inputs.tag_name }}'
+          tagName: ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref_name }}
+          releaseName: 'k8sUI ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref_name }}'
           releaseBody: 'See changelog for details.'
           releaseDraft: true
           prerelease: false
@@ -361,7 +380,8 @@ jobs:
   # =========================================================================
   publish-release:
     name: Generate SBOM, Sign Artifacts & Publish Release
-    needs: [build-and-package]
+    if: always() && needs.build-and-package.result == 'success'
+    needs: [tag-new-version, build-and-package]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -369,6 +389,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref }}
 
       - uses: pnpm/action-setup@v6
         with:
@@ -423,13 +445,17 @@ jobs:
         timeout-minutes: 8
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag_name }}
-          name: 'k8sUI ${{ github.ref_name || inputs.tag_name }}'
+          tag_name: ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref_name }}
+          name: 'k8sUI ${{ needs.tag-new-version.outputs.tag_name || inputs.tag_name || github.ref_name }}'
           draft: false
           prerelease: false
           generate_release_notes: true
           files: |
-            release-artifacts/**/bundle/**/*
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.deb
+            release-artifacts/**/*.AppImage
             sbom/*.json
             SHA256SUMS
             SHA256SUMS.bundle.json

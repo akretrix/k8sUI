@@ -11,7 +11,7 @@ import {
   SortingState,
 } from '@tanstack/react-table';
 import { api } from '../../api/tauriClient';
-import { RefreshCcw, Loader2, AlertTriangle, Globe, XCircle, FileCode, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Loader2, AlertTriangle, Globe, XCircle, FileCode, FileText, Info, Scale, Plus, WifiOff, KeyRound, RefreshCw, ExternalLink, Play, Pause, Clock, Box, Trash2, RotateCcw, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { NamespaceMultiSelect } from './NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from './ColumnVisibilityDropdown';
 import { HelmInstallModal } from '../helm/HelmInstallModal';
@@ -642,13 +642,12 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
         cell: (info) => {
           const rawVal = info.getValue();
           const val = rawVal !== undefined && rawVal !== null ? String(rawVal) : 'Active';
+          const isCompleted = val.includes('Complete') || val.includes('Completed') || val.includes('Succeeded');
           const isHealthy =
             val.includes('Active') ||
             val.includes('Ready') ||
             val.includes('Normal') ||
             val.includes('Bound') ||
-            val.includes('Complete') ||
-            val.includes('Completed') ||
             val.includes('deployed') ||
             val.includes('True') ||
             val === '-';
@@ -659,9 +658,9 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
             ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
             : isSuspended
             ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-            : isRunning
-            ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-            : isHealthy
+            : isCompleted
+            ? 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30'
+            : isRunning || isHealthy
             ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
             : 'bg-amber-500/15 text-amber-400 border-amber-500/30';
 
@@ -705,24 +704,32 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
                 className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-brand-300 transition-colors"
                 title="Describe Resource"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                <Info className="w-4 h-4" />
               </button>
               {['deployments', 'statefulsets'].includes(kind) && onScale && (
                 <button
                   onClick={() => onScale(row)}
-                  className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-blue-300 transition-colors"
-                  title="Scale Replicas"
+                  disabled={isReadOnly}
+                  className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                    isReadOnly ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-blue-300'
+                  }`}
+                  title={isReadOnly ? 'Read-Only Mode' : 'Scale Replicas'}
+                  aria-label="Scale Replicas"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+                  <Scale className="w-4 h-4" />
                 </button>
               )}
               {['deployments', 'statefulsets', 'daemonsets'].includes(kind) && (
                 <button
                   onClick={() => { if (onRestart) onRestart(row); }}
-                  className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-amber-300 transition-colors"
-                  title="Rollout Restart"
+                  disabled={isReadOnly}
+                  className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                    isReadOnly ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-amber-300'
+                  }`}
+                  title={isReadOnly ? 'Read-Only Mode' : 'Rollout Restart'}
+                  aria-label="Rollout Restart"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                  <RotateCcw className="w-4 h-4" />
                 </button>
               )}
               {['pods', 'deployments', 'daemonsets', 'statefulsets', 'jobs'].includes(kind) && (
@@ -731,7 +738,7 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
                   className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-emerald-300 transition-colors"
                   title="View Logs"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
+                  <FileText className="w-4 h-4" />
                 </button>
               )}
               {['cronjobs', 'cronjob', 'cj'].includes(kind.toLowerCase()) && (
@@ -835,10 +842,14 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
               </button>
               <button
                 onClick={() => onDelete(row)}
-                className="p-1 rounded hover:bg-surface-elevated text-gray-400 hover:text-rose-400 transition-colors"
-                title="Delete Resource"
+                disabled={isReadOnly}
+                className={`p-1 rounded hover:bg-surface-elevated transition-colors ${
+                  isReadOnly ? 'text-gray-600 cursor-not-allowed' : 'text-gray-400 hover:text-rose-400'
+                }`}
+                title={isReadOnly ? 'Read-Only Mode' : 'Delete Resource'}
+                aria-label="Delete Resource"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           );
@@ -975,7 +986,7 @@ export const GenericResourceTable: React.FC<GenericResourceTableProps> = ({
             className="p-1.5 rounded-md hover:bg-surface-elevated text-gray-400 hover:text-gray-200 transition-colors flex items-center justify-center group"
             title="Refresh"
           >
-            <RefreshCcw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-brand-400' : 'group-hover:text-brand-300'}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin text-brand-400' : 'group-hover:text-brand-300'}`} />
           </button>
         </div>
       </div>

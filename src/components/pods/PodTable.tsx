@@ -3,7 +3,7 @@ import { PodSummary } from '../../types/cluster';
 import { NamespaceMultiSelect } from '../common/NamespaceMultiSelect';
 import { ColumnDefinition, ColumnVisibilityDropdown } from '../common/ColumnVisibilityDropdown';
 import {
-  Layers,
+  Box,
   Terminal,
   ArrowUpDown,
   ArrowUp,
@@ -586,7 +586,7 @@ export const PodTable: React.FC<PodTableProps> = ({
                     </td>
                     {isColVisible.name && (
                     <td className="py-2.5 px-4 font-semibold text-gray-100 flex items-center space-x-2">
-                      <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                      <Box className="w-3.5 h-3.5 text-brand-400 shrink-0" />
                       <span className="truncate max-w-xs">{pod.name}</span>
                     </td>
                   )}

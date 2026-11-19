@@ -4,6 +4,7 @@ import { Bot, Send, ShieldAlert, Check, X, Cpu, Lock } from 'lucide-react';
 
 interface AiCopilotDrawerProps {
   isOpen: boolean;
+  isReadOnly?: boolean;
   onClose: () => void;
   onApproveProposal: (proposal: PendingAiProposal) => void;
   onRejectProposal: (proposal: PendingAiProposal) => void;
@@ -11,6 +12,7 @@ interface AiCopilotDrawerProps {
 
 export const AiCopilotDrawer: React.FC<AiCopilotDrawerProps> = ({
   isOpen,
+  isReadOnly = false,
   onClose,
   onApproveProposal,
   onRejectProposal,
@@ -161,10 +163,16 @@ export const AiCopilotDrawer: React.FC<AiCopilotDrawerProps> = ({
                     </button>
                     <button
                       onClick={() => onApproveProposal(msg.pending_proposal!)}
-                      className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] flex items-center space-x-1 shadow"
+                      disabled={isReadOnly}
+                      className={`px-3 py-1 rounded font-semibold text-[11px] flex items-center space-x-1 shadow ${
+                        isReadOnly
+                          ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      }`}
+                      title={isReadOnly ? 'Unlock Write Mode to apply proposals' : 'Approve & Apply'}
                     >
                       <Check className="w-3 h-3" />
-                      <span>Approve & Apply</span>
+                      <span>{isReadOnly ? 'Read-Only Mode' : 'Approve & Apply'}</span>
                     </button>
                   </div>
                 </div>

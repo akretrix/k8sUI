@@ -283,7 +283,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={group.name}
                 onClick={() => {
                   setIsRailCollapsed(false);
-                  toggleGroup(group.name);
+                  setExpandedGroups((prev) => ({ ...prev, [group.name]: true }));
                 }}
                 className={`p-2.5 rounded-xl transition-all group relative ${
                   hasActive

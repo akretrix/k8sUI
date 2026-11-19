@@ -15,10 +15,11 @@ minimumReleaseAgeExclude:
   - '@testing-library/react@16.3.3'
   - 'vite'
   - 'source-map-js'
-  - undici@8.10.2
+  - 'undici'
   - postcss-selector-parser@7.1.6
   - '@vitest/mocker@4.1.12'
 
 overrides:
   source-map-js: '>=1.2.2'
-  vite: '>=6.4.4'
+  undici: '>=8.12.2'
+  vite: '^6.4.4'

@@ -7,7 +7,8 @@
 - Scripts: `pnpm install`, `pnpm test --run`, `pnpm run check:security`, `pnpm exec tsc --noEmit`
 
 ### 2. Git Policy
-- NEVER run `git commit`, `git push`, or alter git history. Leave all commits to the user.
+- Do NOT run `git commit` or `git push` autonomously; only commit (always with DCO `git commit -s`) and push when explicitly requested by the user.
+- NEVER rewrite git history (`git push --force`, `git rebase`, `git reset --hard`) on shared branches.
 
 ### 3. Cloud / Cluster Safety
 - All K8s / AWS / GCP / Azure interactions must be **strictly read-only** (`get`, `describe`, `list`, `logs`).

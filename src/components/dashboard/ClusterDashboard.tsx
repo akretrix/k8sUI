@@ -72,27 +72,27 @@ export const ClusterDashboard: React.FC<ClusterDashboardProps> = ({ activeCluste
                   {
                     value: overview.cpu.limits,
                     max: Math.max(overview.cpu.capacity, overview.cpu.limits),
-                    color: '#06b6d4', // Cyan (Limits)
+                    color: '#06B6D4', // Cyan (Limits)
                     radius: 44,
                   },
                   {
                     value: overview.cpu.requests,
                     max: Math.max(overview.cpu.capacity, overview.cpu.limits),
-                    color: '#22c55e', // Green (Requests)
+                    color: '#10B981', // Emerald (Requests)
                     radius: 34,
                   },
                   {
                     value: overview.cpu.usage,
                     max: Math.max(overview.cpu.capacity, overview.cpu.limits),
-                    color: '#ec4899', // Pink (Usage)
+                    color: '#60A5FA', // Brand Blue 400 (Usage)
                     radius: 24,
                   },
                 ]}
                 legendItems={[
-                  { label: 'Usage', value: `${overview.cpu.usage.toFixed(2)} cores`, color: 'bg-pink-500' },
-                  { label: 'Requests', value: `${overview.cpu.requests.toFixed(2)} cores`, color: 'bg-green-500' },
+                  { label: 'Usage', value: `${overview.cpu.usage.toFixed(2)} cores`, color: 'bg-brand-400' },
+                  { label: 'Requests', value: `${overview.cpu.requests.toFixed(2)} cores`, color: 'bg-emerald-500' },
                   { label: 'Limits', value: `${overview.cpu.limits.toFixed(2)} cores`, color: 'bg-cyan-500' },
-                  { label: 'Allocatable', value: `${overview.cpu.allocatable.toFixed(2)} cores`, color: 'bg-blue-500' },
+                  { label: 'Allocatable', value: `${overview.cpu.allocatable.toFixed(2)} cores`, color: 'bg-indigo-500' },
                   { label: 'Capacity', value: `${overview.cpu.capacity.toFixed(2)} cores`, color: 'bg-gray-500' },
                 ]}
                 warningText={
@@ -109,27 +109,27 @@ export const ClusterDashboard: React.FC<ClusterDashboardProps> = ({ activeCluste
                   {
                     value: overview.memory.limits,
                     max: Math.max(overview.memory.capacity, overview.memory.limits),
-                    color: '#06b6d4', // Cyan (Limits)
+                    color: '#06B6D4', // Cyan (Limits)
                     radius: 44,
                   },
                   {
                     value: overview.memory.requests,
                     max: Math.max(overview.memory.capacity, overview.memory.limits),
-                    color: '#22c55e', // Green (Requests)
+                    color: '#10B981', // Emerald (Requests)
                     radius: 34,
                   },
                   {
                     value: overview.memory.usage,
                     max: Math.max(overview.memory.capacity, overview.memory.limits),
-                    color: '#ec4899', // Pink (Usage)
+                    color: '#60A5FA', // Brand Blue 400 (Usage)
                     radius: 24,
                   },
                 ]}
                 legendItems={[
-                  { label: 'Usage', value: `${overview.memory.usage.toFixed(1)} GiB`, color: 'bg-pink-500' },
-                  { label: 'Requests', value: `${overview.memory.requests.toFixed(1)} GiB`, color: 'bg-green-500' },
+                  { label: 'Usage', value: `${overview.memory.usage.toFixed(1)} GiB`, color: 'bg-brand-400' },
+                  { label: 'Requests', value: `${overview.memory.requests.toFixed(1)} GiB`, color: 'bg-emerald-500' },
                   { label: 'Limits', value: `${overview.memory.limits.toFixed(1)} GiB`, color: 'bg-cyan-500' },
-                  { label: 'Allocatable', value: `${overview.memory.allocatable.toFixed(1)} GiB`, color: 'bg-blue-500' },
+                  { label: 'Allocatable', value: `${overview.memory.allocatable.toFixed(1)} GiB`, color: 'bg-indigo-500' },
                   { label: 'Capacity', value: `${overview.memory.capacity.toFixed(1)} GiB`, color: 'bg-gray-500' },
                 ]}
                 warningText={
@@ -146,12 +146,12 @@ export const ClusterDashboard: React.FC<ClusterDashboardProps> = ({ activeCluste
                   {
                     value: overview.pods.scheduled,
                     max: overview.pods.capacity || 100,
-                    color: '#22c55e', // Green
+                    color: '#10B981', // Emerald
                     radius: 40,
                   },
                 ]}
                 legendItems={[
-                  { label: 'Running', value: `${overview.pods.running}`, color: 'bg-green-500' },
+                  { label: 'Running', value: `${overview.pods.running}`, color: 'bg-emerald-400' },
                   { label: 'Scheduled', value: `${overview.pods.scheduled}`, color: 'bg-emerald-600' },
                   { label: 'Capacity', value: `${overview.pods.capacity}`, color: 'bg-gray-500' },
                 ]}
