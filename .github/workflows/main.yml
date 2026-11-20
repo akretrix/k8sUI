@@ -280,11 +280,11 @@ jobs:
       matrix:
         platform:
           - name: macOS-ARM64
-            os: macos-14
+            os: macos-latest
             target: aarch64-apple-darwin
             rust_target: aarch64-apple-darwin
           - name: macOS-x86_64
-            os: macos-14
+            os: macos-latest
             target: x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
           - name: Windows-x86_64
