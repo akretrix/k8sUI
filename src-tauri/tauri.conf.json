@@ -1,6 +1,6 @@
 {
   "productName": "k8sUI",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "identifier": "com.k8sui.desktop",
   "build": {
     "beforeDevCommand": "pnpm run dev",
