@@ -297,10 +297,7 @@ pub fn find_profiles_for_org(start_url: &str, alias: &str) -> Vec<AwsSsoProfileD
                     return true;
                 }
             }
-            if p.profile_name.to_lowercase().starts_with(alias_prefix) {
-                return true;
-            }
-            false
+            p.profile_name.to_lowercase().starts_with(alias_prefix)
         })
         .cloned()
         .collect();
