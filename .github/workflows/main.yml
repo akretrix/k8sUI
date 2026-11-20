@@ -428,7 +428,7 @@ jobs:
           test -s sbom/rust-bom.cdx.json
 
           pnpm install --frozen-lockfile
-          pnpm dlx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file sbom/frontend-bom.cdx.json
+          env -u npm_execpath npx --yes @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file sbom/frontend-bom.cdx.json
           test -s sbom/frontend-bom.cdx.json
 
       - name: Generate SHA256 Checksums
